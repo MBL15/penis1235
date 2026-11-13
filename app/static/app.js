@@ -426,6 +426,21 @@
   const MAX_CHATS = 30;
   const MAX_MESSAGES = 60;
   let chats = [];
+  const HEX32 = /^[0-9a-f]{32}$/;
+  /** Предложенные агентом действия из сохранённой истории: только ожидаемая форма, состояние по умолчанию — «ждёт подтверждения». */
+  function cleanActions(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((a) => a && typeof a === 'object' && HEX32.test(a.id || '') && typeof a.summary === 'string')
+      .slice(0, 3)
+      .map((a) => ({
+        id: a.id,
+        kind: String(a.kind || '').slice(0, 30),
+        summary: a.summary.slice(0, 400),
+        state: ['pending', 'done', 'failed'].includes(a.state) ? a.state : 'pending',
+        result: String(a.result || '').slice(0, 300),
+      }));
+  }
   /** История лежит в localStorage и могла быть испорчена или подменена: берём только записи ожидаемой формы. */
   function cleanChats(raw) {
     if (!Array.isArray(raw)) return [];
@@ -439,7 +454,12 @@
         messages: c.messages
           .filter((m) => m && typeof m === 'object' && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
           .slice(-MAX_MESSAGES)
-          .map((m) => ({ ...m, events: Array.isArray(m.events) ? m.events.filter((e) => e && typeof e === 'object') : [] })),
+          .map((m) => ({
+            ...m,
+            events: Array.isArray(m.events) ? m.events.filter((e) => e && typeof e === 'object') : [],
+            trace_id: HEX32.test(m.trace_id || '') ? m.trace_id : '',
+            actions: cleanActions(m.actions),
+          })),
       }));
   }
   try { chats = cleanChats(JSON.parse(localStorage.getItem(CHAT_KEY))); } catch (_) { chats = []; }
@@ -493,13 +513,29 @@
       <div class="mt-[14px] grid w-full max-w-[640px] grid-cols-2 gap-[10px] w600:grid-cols-1">${starters}</div></div>`;
   }
 
+  const TRACE_LINK = 'font-semibold text-brand-ink underline-offset-2 hover:underline';
+  const ACT_BTN = 'inline-flex min-h-[44px] items-center rounded-field px-[18px] text-[.95rem] font-bold tx-btn active:scale-[.97]';
+  const ACT_OK = `${ACT_BTN} bg-brand text-white shadow-cta hover:bg-brand-hover`;
+  const ACT_NO = `${ACT_BTN} border border-stroke bg-glass-hi hover:bg-white`;
+
+  /** Действие, которое предложил агент: данные меняются только после нажатия «Подтвердить». */
+  function actionHtml(a) {
+    const body = a.state === 'pending'
+      ? `<div class="flex flex-wrap gap-2"><button type="button" class="${ACT_OK}" data-act="ok" data-act-id="${esc(a.id)}">Подтвердить</button><button type="button" class="${ACT_NO}" data-act="no" data-act-id="${esc(a.id)}">Отмена</button></div>`
+      : `<p class="m-0 text-[.9rem] ${a.state === 'failed' ? 'text-bad' : 'text-ink-3'}" role="status">${esc(a.result)}</p>`;
+    return `<div class="grid gap-2 rounded-ctl border border-stroke bg-glass px-4 py-3"><p class="m-0 text-[.95rem] font-semibold">${esc(a.summary)}</p>${body}</div>`;
+  }
+
   function messageHtml(m) {
     if (m.role === 'user') return `<div class="${MSG} justify-end"><div class="max-w-[86%] origin-bottom-right animate-bubble-in whitespace-pre-wrap rounded-[20px] rounded-br-[6px] bg-brand px-4 py-3 text-white shadow-[0_8px_20px_rgba(79,70,229,.25)] [overflow-wrap:anywhere]">${esc(m.content)}</div></div>`;
     // в истории могли остаться ответы старого провайдера: показываем только Gemini, остальные подписываем нейтрально
     const tag = m.mode === 'llm' ? `Подбор сделал ИИ-агент${m.provider === 'gemini' ? ' · Gemini' : ''}` : m.mode === 'rules' ? 'Режим без ИИ: разбор запроса по правилам' : '';
     const cards = m.events && m.events.length ? `<div class="grid auto-rows-auto grid-flow-dense grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 tg:grid-cols-1">${m.events.map((e, i) => cardHtml(e, '', i, false)).join('')}</div>` : '';
+    const trace = HEX32.test(m.trace_id || '') ? `<a class="${TRACE_LINK}" href="/trace/${m.trace_id}" target="_blank" rel="noopener">Как получен ответ</a>` : '';
+    const footer = tag || trace ? `<span class="mt-[6px] block text-[.8rem] text-ink-3">${tag}${tag && trace ? ' · ' : ''}${trace}</span>` : '';
+    const actions = (m.actions || []).map(actionHtml).join('');
     return `<div class="${MSG}"><span class="${AVATAR}" aria-hidden="true">${icon('chat', 'h-[18px] w-[18px]')}</span>
-      <div class="grid min-w-0 flex-1 content-start gap-[10px]"><div class="whitespace-pre-wrap pt-1 [overflow-wrap:anywhere]${m.error ? ' text-bad' : ''}">${esc(m.content)}</div>${tag ? `<span class="mt-[6px] block text-[.8rem] text-ink-3">${tag}</span>` : ''}${cards}</div></div>`;
+      <div class="grid min-w-0 flex-1 content-start gap-[10px]"><div class="whitespace-pre-wrap pt-1 [overflow-wrap:anywhere]${m.error ? ' text-bad' : ''}">${esc(m.content)}</div>${footer}${actions}${cards}</div></div>`;
   }
 
   function scrollThread() {
@@ -564,6 +600,10 @@
       currentId = chat.id;
     }
     const history = chat.messages.filter((m) => !m.error).slice(-10).map(({ role, content }) => ({ role, content: String(content).slice(0, 6000) }));
+    // События из прошлого ответа: на них опираются «ещё», «в другой день» и «что-нибудь похожее»
+    const lastReply = [...chat.messages].reverse().find((m) => m.role === 'assistant' && !m.error);
+    const context_event_ids = lastReply && Array.isArray(lastReply.events)
+      ? lastReply.events.map((e) => e.id).filter(Number.isInteger).slice(0, 10) : [];
     chat.messages.push({ role: 'user', content: text, ts: Date.now() });
     chat.updated = Date.now();
     pendingId = chat.id;
@@ -573,9 +613,13 @@
       const data = await api('/api/v1/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history }),
+        body: JSON.stringify({ message: text, history, context_event_ids }),
       });
-      chat.messages.push({ role: 'assistant', content: data.reply, events: data.events, mode: data.mode, provider: data.provider, ts: Date.now() });
+      chat.messages.push({
+        role: 'assistant', content: data.reply, events: data.events, mode: data.mode, provider: data.provider, ts: Date.now(),
+        trace_id: HEX32.test(data.trace_id || '') ? data.trace_id : '',
+        actions: cleanActions((data.pending_actions || []).map((a) => ({ ...a, state: 'pending' }))),
+      });
     } catch (error) {
       chat.messages.push({ role: 'assistant', content: `Не получилось ответить: ${error.message}. Попробуйте ещё раз.`, error: true, ts: Date.now() });
     }
@@ -601,7 +645,28 @@
     sendMessage(text);
   });
 
+  /** Подтверждение или отмена действия, предложенного агентом. Ответ сервера (в том числе «предложение устарело») показываем как есть. */
+  async function resolveAction(id, confirm) {
+    const action = (currentChat()?.messages || []).flatMap((m) => m.actions || []).find((a) => a.id === id);
+    if (!action || action.state !== 'pending') return;
+    action.state = 'busy';
+    action.result = 'Выполняю…';
+    renderThread();
+    try {
+      const data = await api(`/api/v1/agent/actions/${encodeURIComponent(id)}/${confirm ? 'confirm' : 'cancel'}`, { method: 'POST' });
+      action.state = data.ok ? 'done' : 'failed';
+      action.result = String(data.message || '');
+    } catch (error) {
+      action.state = 'failed';
+      action.result = error.message;
+    }
+    saveChats();
+    renderThread();
+  }
+
   $('#thread').addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act-id]');
+    if (act) { resolveAction(act.dataset.actId, act.dataset.act === 'ok'); return; }
     const starter = e.target.closest('[data-q]');
     if (starter) sendMessage(starter.dataset.q);
   });

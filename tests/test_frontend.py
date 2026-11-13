@@ -53,3 +53,14 @@ def test_no_inline_styles_for_layout():
     text = (STATIC / "index.html").read_text(encoding="utf-8")
     styles = re.findall(r'style="([^"]*)"', text)
     assert all(re.fullmatch(r"--i:\d+", s) for s in styles), styles
+
+
+def test_chat_shows_the_trace_link_and_confirmation_buttons():
+    """Ответ агента сопровождается ссылкой «Как получен ответ», действия из ответа подтверждаются кнопкой, а события прошлого
+    ответа уходят на сервер: на них опираются «ещё» и «похожее». Классы этих элементов должны быть в собранном CSS."""
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "Как получен ответ" in js and "/trace/${m.trace_id}" in js and "context_event_ids" in js
+    assert "/api/v1/agent/actions/" in js and "data-act-id" in js and "Подтвердить" in js
+    assert "trace_id: HEX32.test" in js  # идентификатор трассы из истории браузера проверяется перед подстановкой в ссылку
+    for cls in ("min-h-[44px]", "bg-brand", "text-bad", "hover:underline", "underline-offset-2"):
+        assert cls.replace("[", r"\[").replace("]", r"\]").replace(":", r"\:") in css(), cls

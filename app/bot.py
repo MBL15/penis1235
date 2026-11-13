@@ -22,7 +22,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.orm import Session
 
-from . import config, subscriptions
+from . import agent_actions, config, subscriptions
 from .agent import ask
 from .config import now_local
 from .db import SessionLocal, init_db
@@ -52,6 +52,7 @@ QUICK = {
 # Состояние чатов хранится в памяти процесса: для демо этого достаточно.
 chat_city: dict[int, str] = {}
 chat_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=10))
+chat_events: dict[int, list[int]] = {}  # события из последнего подбора агента: на них опираются «ещё», «похожее», «в другой день»
 # Свободный текст уходит в платную модель: не больше 8 вопросов в минуту с одного пользователя и не больше одного
 # одновременно (иначе один человек занимает все потоки и квоту).
 ai_limiter = RateLimiter(limit=8, detail="Слишком много вопросов подряд. Подождите минуту и спросите ещё раз.")
@@ -305,9 +306,12 @@ def agent_view(chat_id: int, text: str) -> View:
     city = chat_city.get(chat_id)
     message = f"{text}\n(Город пользователя: {city})" if city else text
     with SessionLocal() as session:
-        result = ask(session, message, list(chat_history[chat_id]))
+        result = ask(session, message, list(chat_history[chat_id]), context_event_ids=chat_events.get(chat_id), chat_id=chat_id)
         chat_history[chat_id].extend([{"role": "user", "content": text}, {"role": "assistant", "content": result.reply}])
         _forget_oldest(chat_history)
+        if result.events:
+            chat_events[chat_id] = [e.id for e in result.events]
+            _forget_oldest(chat_events)
         body = html.escape(result.reply)
         # Развёрнутый ответ Gemini уже описывает каждое событие; короткий ответ правил дополняем списком карточек.
         if result.events and result.provider != "gemini":
@@ -315,9 +319,18 @@ def agent_view(chat_id: int, text: str) -> View:
         kb = InlineKeyboardBuilder()
         for number, event in enumerate(result.events, 1):
             kb.button(text=f"{number}. {event.title[:28]}", callback_data=f"e:{event.id}")
+        if result.trace_id and config.PUBLIC_URL.startswith("https://"):  # откуда взялся ответ: запрос, вызовы, основания
+            kb.button(text="🔎 Как получен ответ", url=f"{config.PUBLIC_URL}/trace/{result.trace_id}")
         kb.button(text="🏠 Меню", callback_data="menu")
         kb.adjust(1)
-        return View(clip(body), kb.as_markup())
+        markup = kb.as_markup()
+        # Действия, меняющие данные (подписка), выполняются только по кнопке: агент их лишь предлагает
+        for action in reversed(result.pending_actions):
+            markup.inline_keyboard.insert(0, [
+                InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"ag:ok:{action['id']}"),
+                InlineKeyboardButton(text="✖ Отмена", callback_data=f"ag:no:{action['id']}"),
+            ])
+        return View(clip(body), markup)
 
 
 # ---------- обработчики ----------
@@ -445,6 +458,35 @@ async def on_event(call: CallbackQuery) -> None:
         return
     await call.message.answer(view.text, reply_markup=view.markup, disable_web_page_preview=True)
     await call.answer()
+
+
+@router.callback_query(F.data.startswith("ag:"))
+async def on_agent_action(call: CallbackQuery) -> None:
+    """Подтверждение или отмена действия, которое предложил агент. Подписка привязана к чату, где её предложили."""
+    match = re.fullmatch(r"ag:(ok|no):([0-9a-f]{32})", call.data or "")
+    if not match:
+        await call.answer(STALE, show_alert=True)
+        return
+    chat_id, action_id = call.message.chat.id, match.group(2)
+
+    def work() -> tuple[bool, str]:
+        with SessionLocal() as session:
+            if match.group(1) == "ok":
+                return agent_actions.confirm(session, action_id, chat_id=chat_id)
+            done = agent_actions.cancel(session, action_id, chat_id=chat_id)
+            return done, "Хорошо, ничего не меняю." if done else "Это предложение уже недействительно."
+
+    ok, message = await asyncio.to_thread(work)
+    await call.answer(message[:190], show_alert=not ok)
+    if ok:
+        await call.message.answer(message)
+    # кнопки подтверждения убираем в любом случае: действие выполнено, отменено или устарело
+    shown = call.message.reply_markup.inline_keyboard if call.message.reply_markup else []
+    rows = [r for r in shown if not any((b.callback_data or "").startswith("ag:") for b in r)]
+    try:
+        await call.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    except TelegramAPIError:
+        pass
 
 
 # ---------- подписки на новые события ----------

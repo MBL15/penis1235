@@ -1,5 +1,6 @@
 """Бот целиком: настоящий Dispatcher aiogram, но без сети (отправка в Telegram подменена)."""
 import asyncio
+import re
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -38,8 +39,10 @@ def wired(session, monkeypatch):
     monkeypatch.setattr(Message, "answer", answer)
     monkeypatch.setattr(CallbackQuery, "answer", cb_answer)
     monkeypatch.setattr(Bot, "send_chat_action", typing)
+    monkeypatch.setattr(Message, "edit_reply_markup", AsyncMock())
     bot.chat_city.clear()
     bot.chat_history.clear()
+    bot.chat_events.clear()
     bot.sub_draft.clear()
     bot.ai_limiter.hits.clear()
     bot.ai_busy.clear()
@@ -386,3 +389,67 @@ def test_blocked_bot_removes_the_subscription_and_a_flaky_send_keeps_it(session,
     digest_ready.side_effect = TelegramForbiddenError(method=None, message="Forbidden: bot was blocked by the user")
     assert asyncio.run(bot.send_digests(Bot(TOKEN), NOON)) == 0
     assert subscriptions.list_for(session, CHAT) == []  # заблокировал бота: данные стираем
+
+
+# ---------- агент в боте: подтверждение действий, ссылка на трассу, события прошлого ответа ----------
+
+def agent_buttons(markup):
+    return [b.callback_data for b in buttons(markup) if (b.callback_data or "").startswith("ag:")]
+
+
+def test_subscription_is_only_offered_until_the_button_is_pressed(dispatcher, wired, session):
+    from app.models import Subscription
+
+    wired.say(dispatcher, "Подпиши меня на концерты в Уфе")
+    ok, no = agent_buttons(wired.last_markup)
+    assert ok.startswith("ag:ok:") and no.startswith("ag:no:") and ok[6:] == no[6:]
+    assert "Ничего не изменено" in wired.last_text
+    assert session.query(Subscription).count() == 0  # одного сообщения мало
+
+    wired.press(dispatcher, ok)
+    (sub,) = session.query(Subscription).all()
+    assert (sub.chat_id, sub.city, sub.category) == (CHAT, "Уфа", "concert")
+    assert "оформлена" in wired.cb_answer.await_args.args[0]
+    bot_message = wired.answer.call_args.args[0]
+    assert "оформлена" in bot_message
+
+    wired.press(dispatcher, ok)  # вторая попытка по той же кнопке ничего не создаёт
+    assert session.query(Subscription).count() == 1
+    assert wired.cb_answer.await_args.kwargs.get("show_alert") is True
+
+
+def test_cancel_button_discards_the_proposal(dispatcher, wired, session):
+    from app.models import Subscription
+
+    wired.say(dispatcher, "Подпиши меня на выставки в Стерлитамаке")
+    ok, no = agent_buttons(wired.last_markup)
+    wired.press(dispatcher, no)
+    assert session.query(Subscription).count() == 0 and "ничего не меняю" in wired.cb_answer.await_args.args[0]
+    wired.press(dispatcher, ok)  # отменённое предложение подтвердить уже нельзя
+    assert session.query(Subscription).count() == 0 and wired.cb_answer.await_args.kwargs.get("show_alert") is True
+
+
+def test_malformed_agent_button_is_stale(dispatcher, wired):
+    wired.press(dispatcher, "ag:ok:not-a-real-id")
+    wired.cb_answer.assert_awaited_with(bot.STALE, show_alert=True)
+
+
+def test_trace_link_is_offered_only_with_https(dispatcher, wired, monkeypatch):
+    monkeypatch.setattr(config, "PUBLIC_URL", "http://localhost:8000")
+    wired.say(dispatcher, "бесплатно на выходных")
+    assert not [b for b in buttons(wired.last_markup) if b.url and "/trace/" in b.url]
+    monkeypatch.setattr(config, "PUBLIC_URL", "https://afisha.example")
+    wired.say(dispatcher, "бесплатно на выходных")
+    (link,) = [b for b in buttons(wired.last_markup) if b.url and "/trace/" in b.url]
+    assert re.fullmatch(r"https://afisha\.example/trace/[0-9a-f]{32}", link.url)
+
+
+def test_agent_gets_the_events_of_the_previous_answer(dispatcher, wired, monkeypatch):
+    seen = []
+    real = bot.ask
+    monkeypatch.setattr(bot, "ask", lambda *a, **kw: (seen.append(kw), real(*a, **kw))[1])
+    wired.say(dispatcher, "бесплатно на выходных")
+    shown = bot.chat_events[CHAT]
+    assert shown and seen[0]["context_event_ids"] is None and seen[0]["chat_id"] == CHAT
+    wired.say(dispatcher, "ещё варианты")
+    assert seen[1]["context_event_ids"] == shown
