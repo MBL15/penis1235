@@ -5,7 +5,7 @@ from . import audit
 from .ingest import DEFAULT_CITY, _search_text
 from .dedup import make_dedup_key
 from .models import Event
-from .normalize import canonical_category, canonical_city, norm_text, parse_age
+from .normalize import canonical_category, canonical_city, canonical_language, norm_text, parse_age
 from .schemas import EventPatch
 
 
@@ -35,6 +35,10 @@ def edit_event(session: Session, event: Event, patch: EventPatch, actor: str) ->
             event.category = category
         elif field == "age_limit":
             event.age_limit = parse_age(value)
+        elif field == "language":
+            event.language = canonical_language(value) if value else None
+            if value and event.language is None:
+                raise EditError(f"Неизвестный язык: {value}. Допустимы коды ba, ru, tt, en, cv, mhr или названия")
         elif field in ("description", "venue", "address", "url", "image_url"):
             setattr(event, field, (value or "").strip() if field != "description" else (value or ""))
         else:

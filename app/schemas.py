@@ -39,6 +39,10 @@ class EventIn(BaseModel):
     series_until: datetime | None = Field(
         None, description="Конец серии показов: start_at — известный показ, остальные даты серии источник не сообщает"
     )
+    duration_min: int | None = Field(None, ge=1, le=20_160, description="Длительность, минут; если не указана, выводится из времени окончания в тот же день")
+    language: str | None = Field(None, max_length=32, description="Язык мероприятия (ba, ru, tt, en или название), только если указан явно")
+    lat: float | None = Field(None, ge=-90, le=90)
+    lon: float | None = Field(None, ge=-180, le=180)
     price_min: int | None = Field(None, ge=0, le=MAX_PRICE, description="0 = бесплатно, null = цена неизвестна")
     price_max: int | None = Field(None, ge=0, le=MAX_PRICE)
     age_limit: int | str | None = Field(None, description="число или строка вида «12+»")
@@ -114,6 +118,11 @@ class EventOut(BaseModel):
     start_at: datetime
     end_at: datetime | None
     series_until: datetime | None = Field(None, description="Конец серии показов; даты между start_at и этим днём неизвестны")
+    duration_min: int | None = Field(None, description="Длительность в минутах; null, если неизвестна")
+    language: str | None = Field(None, description="Код языка (ba, ru, tt, en…); null, если язык не указан")
+    language_label: str = ""
+    lat: float | None = None
+    lon: float | None = None
     price_min: int | None
     price_max: int | None
     price_text: str
@@ -197,6 +206,10 @@ class EventPatch(BaseModel):
     start_at: datetime | None = None
     end_at: datetime | None = None
     series_until: datetime | None = None
+    duration_min: int | None = Field(None, ge=1, le=20_160)
+    language: str | None = Field(None, max_length=32)
+    lat: float | None = Field(None, ge=-90, le=90)
+    lon: float | None = Field(None, ge=-180, le=180)
     price_min: int | None = Field(None, ge=0, le=MAX_PRICE)
     price_max: int | None = Field(None, ge=0, le=MAX_PRICE)
     age_limit: int | str | None = None

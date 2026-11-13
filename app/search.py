@@ -2,13 +2,13 @@
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, extract, func, or_, select
 from sqlalchemy.orm import Session
 
 from .config import now_local
 from .formatting import ONGOING_GRACE
 from .models import Event
-from .normalize import ACTIVE_STATUSES, canonical_category, canonical_city, norm_text, stem, tokens
+from .normalize import ACTIVE_STATUSES, canonical_category, canonical_city, canonical_language, norm_text, stem, tokens
 
 WHEN_VALUES = ("today", "tomorrow", "weekend", "week")
 MAX_QUERY_WORDS = 8  # каждое слово — отдельный LIKE по всей таблице: длинный запрос не должен её перебирать сотни раз
@@ -29,6 +29,11 @@ class SearchFilters:
     venue: str | None = None  # площадка: часть названия (сравнивается по нормализованному тексту)
     include_drafts: bool = False  # черновики видит только модератор
     publication: str | None = None  # модератору: draft — только черновики, published — только опубликованные
+    time_from: time | None = None  # время начала не раньше (события без указанного времени не подходят)
+    time_to: time | None = None  # время начала не позже
+    ends_by: time | None = None  # закончится не позже: нужна известная длительность, иначе событие не подходит
+    max_duration: int | None = None  # длительность не больше, минут (неизвестная не подходит)
+    language: str | None = None  # язык мероприятия (ba, ru, tt, en…): только у событий, где он указан
     include_past: bool = False
     sort: str = "date"  # date | price
     limit: int = 20
@@ -40,6 +45,9 @@ class SearchFilters:
         for key in ("date_from", "date_to"):
             if key in out:
                 out[key] = out[key].isoformat()
+        for key in ("time_from", "time_to", "ends_by"):
+            if key in out:
+                out[key] = out[key].strftime("%H:%M")
         for key in ("sort", "limit", "offset"):
             out.pop(key, None)
         return out
@@ -60,6 +68,15 @@ def resolve_when(when: str, today: date) -> tuple[date, date]:
     if when == "week":
         return today, today + timedelta(days=6)
     raise ValueError(f"Неизвестный период: {when}")
+
+
+# Минуты от полуночи у времени начала. 00:00 в наших данных значит «время не указано», поэтому такие события
+# под фильтры по времени не попадают: подтвердить время мы не можем.
+_START_MINUTES = extract("hour", Event.start_at) * 60 + extract("minute", Event.start_at)
+
+
+def _minutes(value: time) -> int:
+    return value.hour * 60 + value.minute
 
 
 def _conditions(f: SearchFilters, now: datetime) -> list:
@@ -102,6 +119,19 @@ def _conditions(f: SearchFilters, now: datetime) -> list:
         conds.append(and_(Event.price_min == 0, or_(Event.price_max.is_(None), Event.price_max == 0)))
     elif f.price_max is not None:
         conds.append(and_(Event.price_min.is_not(None), Event.price_min <= f.price_max))
+
+    if f.time_from is not None or f.time_to is not None or f.ends_by is not None:
+        conds.append(_START_MINUTES > 0)
+    if f.time_from is not None:
+        conds.append(_START_MINUTES >= _minutes(f.time_from))
+    if f.time_to is not None:
+        conds.append(_START_MINUTES <= _minutes(f.time_to))
+    if f.ends_by is not None:
+        conds.append(and_(Event.duration_min.is_not(None), _START_MINUTES + Event.duration_min <= _minutes(f.ends_by)))
+    if f.max_duration is not None:
+        conds.append(and_(Event.duration_min.is_not(None), Event.duration_min <= f.max_duration))
+    if f.language:
+        conds.append(Event.language == (canonical_language(f.language) or f.language))
 
     if f.age is not None:
         conds.append(Event.age_limit <= f.age)

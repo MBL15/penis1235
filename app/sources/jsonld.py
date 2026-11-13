@@ -172,6 +172,16 @@ def record_from_ld(
         start = datetime.combine(today, datetime.min.time())
 
     venue, address, city = place_info(node.get("location"))
+    place = _first(node.get("location"))
+    geo = place.get("geo") if isinstance(place, dict) else None
+    lat = lon = None
+    if isinstance(geo, dict):
+        try:
+            lat, lon = float(geo.get("latitude")), float(geo.get("longitude"))
+        except (TypeError, ValueError):
+            lat = lon = None
+        if lat is not None and not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            lat = lon = None
     low, high, sold_out = prices_from_offers(node.get("offers"))
     status = STATUS.get(str(node.get("eventStatus", "")).rsplit("/", 1)[-1].lower(), "sold_out" if sold_out else "scheduled")
     url = str(node.get("url") or page_url or "")
@@ -194,6 +204,8 @@ def record_from_ld(
         "status": status,
         "source": source,
         "source_url": url,
+        "lat": lat,
+        "lon": lon,
     }
     if end is not None:
         record["series_until" if series else "end_at"] = end.isoformat()

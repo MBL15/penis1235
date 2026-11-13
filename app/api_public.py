@@ -1,5 +1,5 @@
 """Открытая часть REST API: чтение афиши, справочники, вопрос ИИ-помощнику. Подключается дважды: /api/v1 и /api (старые пути)."""
-from datetime import date
+from datetime import date, time
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, Response
@@ -55,6 +55,13 @@ router = APIRouter(responses={
     429: {"model": ErrorOut, "description": "Слишком много запросов"},
 })
 
+HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
+
+
+def _hhmm(value: str | None) -> time | None:
+    return time(int(value[:2]), int(value[3:])) if value else None
+
+
 # Сколько секунд ответ можно держать в кеше браузера и прокси (ETag работает всегда).
 TTL_EVENT, TTL_LIST, TTL_DIRECTORY = 60, 30, 300
 
@@ -73,6 +80,11 @@ def list_events(
     price_max: Annotated[int | None, Query(ge=0, description="Не дороже, ₽ (события без цены не попадают)")] = None,
     free: Annotated[bool, Query(description="Только бесплатные")] = False,
     age: Annotated[int | None, Query(ge=0, le=99, description="Возраст посетителя: покажем события с ограничением не выше")] = None,
+    time_from: Annotated[str | None, Query(pattern=HHMM, description="Начало не раньше, ЧЧ:ММ. События без указанного времени не подходят")] = None,
+    time_to: Annotated[str | None, Query(pattern=HHMM, description="Начало не позже, ЧЧ:ММ")] = None,
+    ends_by: Annotated[str | None, Query(pattern=HHMM, description="Закончится не позже, ЧЧ:ММ. Только у событий с известной длительностью")] = None,
+    max_duration: Annotated[int | None, Query(ge=1, le=1440, description="Длительность не больше, минут. Только у событий с известной длительностью")] = None,
+    language: Annotated[str | None, Query(max_length=32, description="Язык мероприятия: ba, ru, tt, en. Только у событий, где язык указан")] = None,
     kids: Annotated[bool | None, Query(description="Только детские и семейные")] = None,
     status: Annotated[list[str] | None, Query(max_length=8, description=f"{', '.join(STATUSES)} или all. По умолчанию без отменённых")] = None,
     include_past: Annotated[bool, Query(description="Включить уже прошедшие")] = False,
@@ -100,6 +112,7 @@ def list_events(
     filters = SearchFilters(
         q=q, city=city, venue=venue, category=category, date_from=date_from, date_to=date_to, price_max=price_max,
         free_only=free, age=age, kids=kids, statuses=status, include_past=include_past,
+        time_from=_hhmm(time_from), time_to=_hhmm(time_to), ends_by=_hhmm(ends_by), max_duration=max_duration, language=language,
         sort=sort, limit=limit, offset=offset,
     )
     now = now_local()

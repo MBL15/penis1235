@@ -10,7 +10,7 @@ from .observability import request_id_var
 # Поля, изменения которых попадают в журнал. Служебные (search_text, dedup_key, updated_at) не нужны: они выводятся из этих.
 TRACKED = (
     "title", "description", "category", "city", "venue", "address", "start_at", "end_at", "series_until", "price_min",
-    "price_max", "age_limit", "kids_friendly", "url", "image_url", "status", "publication",
+    "price_max", "age_limit", "kids_friendly", "url", "image_url", "status", "publication", "duration_min", "language",
 )
 
 

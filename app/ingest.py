@@ -21,6 +21,9 @@ from .normalize import (
     build_search_text,
     canonical_category,
     canonical_city,
+    canonical_language,
+    derive_duration,
+    detect_language,
     find_city_in_text,
     is_kids_text,
     norm_text,
@@ -38,7 +41,7 @@ def _search_text(event: Event) -> str:
     )
 
 
-def _merge(event: Event, data: EventIn, *, category: str, age: int, kids: bool, same_source: bool) -> bool:
+def _merge(event: Event, data: EventIn, *, category: str, age: int, kids: bool, same_source: bool, language: str | None = None) -> bool:
     """Обновляет событие данными из нового источника. Возвращает True, если что-то изменилось."""
     changed = False
 
@@ -62,6 +65,9 @@ def _merge(event: Event, data: EventIn, *, category: str, age: int, kids: bool, 
     fill("url", data.url)
     fill("image_url", data.image_url)
     fill("end_at", data.end_at)
+    fill("language", language)
+    fill("lat", data.lat)
+    fill("lon", data.lon)
     if data.series_until is not None:
         if same_source or event.series_until is None:
             put("series_until", data.series_until)
@@ -91,6 +97,8 @@ def _merge(event: Event, data: EventIn, *, category: str, age: int, kids: bool, 
         put("start_at", data.start_at)
     elif (event.start_at.hour, event.start_at.minute) == (0, 0) and (data.start_at.hour, data.start_at.minute) != (0, 0):
         put("start_at", data.start_at)
+
+    put("duration_min", data.duration_min or derive_duration(event.start_at, event.end_at) or event.duration_min)
 
     # Статус храним по каждому источнику, а у события он «самый тревожный» из них: свежая выгрузка источника A
     # не должна стирать отмену, о которой сообщил B. Записи без статуса (старые) считаем согласными с текущим статусом.
@@ -123,6 +131,8 @@ def upsert_detailed(session: Session, data: EventIn, *, actor: str = "system") -
         category == "kids" or is_kids_text(f"{data.title} {data.description}")
     )
 
+    language = canonical_language(data.language) or detect_language(f"{data.title}\n{data.description}")
+
     existing = find_duplicate(
         session, city=city, start_at=data.start_at, title=data.title, venue=data.venue, url=data.url
     )
@@ -137,6 +147,10 @@ def upsert_detailed(session: Session, data: EventIn, *, actor: str = "system") -
             start_at=data.start_at,
             end_at=data.end_at,
             series_until=data.series_until,
+            duration_min=data.duration_min or derive_duration(data.start_at, data.end_at),
+            language=language,
+            lat=data.lat,
+            lon=data.lon,
             price_min=data.price_min,
             price_max=data.price_max,
             age_limit=age,
@@ -160,7 +174,7 @@ def upsert_detailed(session: Session, data: EventIn, *, actor: str = "system") -
 
     same_source = any(s.get("name") == data.source for s in existing.sources or [])
     before = audit.snapshot(existing)
-    changed = _merge(existing, data, category=category, age=age, kids=kids, same_source=same_source)
+    changed = _merge(existing, data, category=category, age=age, kids=kids, same_source=same_source, language=language)
     if changed:
         existing.dedup_key = make_dedup_key(existing.city, existing.start_at, existing.title)
         existing.search_text = _search_text(existing)

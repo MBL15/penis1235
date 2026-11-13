@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from .config import now_local
@@ -27,6 +27,10 @@ class Event(Base):
     # Серия показов: start_at — известный показ (первый или ближайший), series_until — конец серии. Остальные даты
     # источник не сообщает, поэтому для поиска по дате серия считается только в день start_at.
     series_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)  # от источника или из окончания в тот же день
+    language: Mapped[str | None] = mapped_column(String(8), nullable=True, index=True)  # ba | ru | tt | en…, только если назван явно
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)  # координаты, если источник их отдаёт (schema.org geo)
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
     price_min: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0 = бесплатно, None = неизвестно
     price_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
     age_limit: Mapped[int] = mapped_column(Integer, default=0)

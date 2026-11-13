@@ -52,6 +52,40 @@ def backfill_defaults(bind: Engine) -> int:
             conn.execute(text("UPDATE events SET venue_key = :key WHERE id = :id"),
                          [{"id": row.id, "key": norm_text(row.venue or "")} for row in rows])
         changed += len(rows)
+        changed += _backfill_derived(conn)
+    return changed
+
+
+def _backfill_derived(conn) -> int:
+    """Длительность из окончания в тот же день и явно названный язык для строк, загруженных до появления этих столбцов."""
+    from datetime import datetime
+
+    from .normalize import derive_duration, detect_language
+
+    columns = {c["name"] for c in inspect(conn).get_columns("events")}
+    if not {"start_at", "end_at", "duration_min", "language", "title", "description"} <= columns:
+        return 0  # самая старая схема: заполнять пока нечем
+
+    def moment(value):
+        return value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+
+    changed = 0
+    durations = []
+    for row in conn.execute(text("SELECT id, start_at, end_at FROM events WHERE duration_min IS NULL AND end_at IS NOT NULL")):
+        minutes = derive_duration(moment(row.start_at), moment(row.end_at))
+        if minutes is not None:
+            durations.append({"id": row.id, "value": minutes})
+    if durations:
+        conn.execute(text("UPDATE events SET duration_min = :value WHERE id = :id"), durations)
+        changed += len(durations)
+    languages = []
+    for row in conn.execute(text("SELECT id, title, description FROM events WHERE language IS NULL")):
+        code = detect_language(f"{row.title}\n{row.description or ''}")
+        if code:
+            languages.append({"id": row.id, "value": code})
+    if languages:
+        conn.execute(text("UPDATE events SET language = :value WHERE id = :id"), languages)
+        changed += len(languages)
     return changed
 
 

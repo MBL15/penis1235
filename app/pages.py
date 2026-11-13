@@ -9,9 +9,9 @@ from datetime import datetime
 
 from . import config
 from .config import now_local
-from .formatting import MONTHS_GEN, is_demo, is_free, is_past, price_text, when_text
+from .formatting import MONTHS_GEN, duration_text, is_demo, is_free, is_past, price_text, when_text
 from .models import Event
-from .normalize import CATEGORIES, STATUSES
+from .normalize import CATEGORIES, LANGUAGES, STATUSES
 
 BUTTON = ("inline-flex min-h-[50px] items-center justify-center gap-2 rounded-ctl px-6 font-bold no-underline tx-btn "
           "w600:w-full")
@@ -126,6 +126,10 @@ def render_event_page(event: Event, now: datetime | None = None) -> str:
                                         "Уточняйте расписание у организатора."))
     if place:
         facts.append(_row("Где", esc(place) + (f"<br><span class=\"font-normal text-ink-3\">{esc(event.address)}</span>" if event.address else "")))
+    if event.duration_min:
+        facts.append(_row("Длительность", f"около {esc(duration_text(event.duration_min))}"))
+    if event.language in LANGUAGES:
+        facts.append(_row("Язык", esc(LANGUAGES[event.language])))
     facts.append(_row("Цена", esc(price)))
     if event.age_limit:
         facts.append(_row("Возраст", f"{int(event.age_limit)}+"))

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from .config import now_local
 from .models import Event
-from .normalize import CATEGORIES, STATUSES
+from .normalize import CATEGORIES, LANGUAGES, STATUSES
 from .schemas import EventOut, SourceRef
 
 WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
@@ -35,6 +35,11 @@ def price_text(event: Event) -> str:
     if hi == lo:
         return f"{lo} ₽"
     return f"{lo}–{hi} ₽"
+
+
+def duration_text(minutes: int) -> str:
+    hours, rest = divmod(minutes, 60)
+    return f"{hours} ч {rest} мин" if hours and rest else (f"{hours} ч" if hours else f"{rest} мин")
 
 
 def is_series(event: Event) -> bool:
@@ -89,6 +94,11 @@ def event_to_out(event: Event, now: datetime | None = None) -> EventOut:
         start_at=event.start_at,
         end_at=event.end_at,
         series_until=event.series_until,
+        duration_min=event.duration_min,
+        language=event.language,
+        language_label=LANGUAGES.get(event.language or "", ""),
+        lat=event.lat,
+        lon=event.lon,
         price_min=event.price_min,
         price_max=event.price_max,
         price_text=price_text(event),

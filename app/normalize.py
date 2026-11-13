@@ -188,3 +188,36 @@ def is_kids_text(text: str) -> bool:
 
 def build_search_text(*parts: str) -> str:
     return " ".join(p for p in (norm_text(x) for x in parts) if p)
+
+
+# ---------- язык и длительность (ТЗ §8.1): только то, что названо или следует из данных, без догадок ----------
+
+LANGUAGES: dict[str, str] = {
+    "ba": "башкирский", "ru": "русский", "tt": "татарский", "en": "английский", "cv": "чувашский", "mhr": "марийский",
+}
+_LANG_STEMS = (("башкирск", "ba"), ("татарск", "tt"), ("русск", "ru"), ("английск", "en"), ("чувашск", "cv"), ("марийск", "mhr"))
+_LANG_RE = re.compile(r"\bна\s+(башкирск|татарск|русск|английск|чувашск|марийск)\w*\s+язык\w*")
+
+
+def detect_language(text: str | None) -> str | None:
+    """Язык мероприятия, только если он назван явно: «спектакль на башкирском языке». Иначе None: язык не угадываем."""
+    match = _LANG_RE.search((text or "").lower().replace("ё", "е"))
+    return dict(_LANG_STEMS)[match.group(1)] if match else None
+
+
+def canonical_language(value) -> str | None:
+    """Код языка из кода («ba») или названия («башкирский», «на башкирском»); неизвестное значение даёт None."""
+    if not value:
+        return None
+    low = str(value).strip().lower().replace("ё", "е")
+    if low in LANGUAGES:
+        return low
+    return next((code for prefix, code in _LANG_STEMS if low.startswith(prefix) or f" {prefix}" in f" {low}"), None)
+
+
+def derive_duration(start, end) -> int | None:
+    """Длительность в минутах, если известно время окончания в тот же день и время начала указано (00:00 значит «не указано»)."""
+    if start is None or end is None or start.date() != end.date() or (start.hour, start.minute) == (0, 0) or end <= start:
+        return None
+    minutes = int((end - start).total_seconds() // 60)
+    return minutes if 5 <= minutes <= 16 * 60 else None
