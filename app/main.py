@@ -38,8 +38,10 @@ log = logging.getLogger("afisha.api")
 
 STATIC_DIR = config.BASE_DIR / "app" / "static"
 
-DESCRIPTION = """
+DESCRIPTION = f"""
 Единая достоверная афиша культурных событий Республики Башкортостан.
+
+**{config.DISCLAIMER}**
 
 * **Чтение открыто** — `GET /api/events`, `GET /api/events/{id}`, `GET /api/meta`: подключайте к любому сайту.
 * **Приём данных** — `POST /api/events` с заголовком `X-API-Key`: одно и то же событие из разных источников
@@ -155,6 +157,7 @@ def meta(session: SessionDep) -> dict:
         "categories": [{"slug": s, "label": label, "count": counts.get(s, 0)} for s, label in CATEGORIES.items()],
         "statuses": [{"slug": s, "label": label} for s, label in STATUSES.items()],
         "demo_data": has_demo,
+        "disclaimer": config.DISCLAIMER,
         "now": now_local().isoformat(timespec="minutes"),
     }
 

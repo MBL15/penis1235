@@ -5,13 +5,16 @@
  *   <script src="https://ВАШ-СЕРВЕР/widget.js" data-target="#afisha" data-city="Уфа" data-limit="5"></script>
  *
  * Атрибуты (все необязательные): data-target, data-title, data-limit, data-city, data-category,
- * data-when (today|tomorrow|weekend|week), data-free="true", data-kids="true".
+ * data-when (today|tomorrow|weekend|week), data-free="true", data-kids="true", data-disclaimer (свой текст пометки
+ * «неофициальный сервис»; пометка в виджете есть всегда).
  * Виджет рисуется в Shadow DOM, поэтому стили сайта ему не мешают, а он не ломает стили сайта.
  */
 (function () {
   var script = document.currentScript || document.querySelector('script[src*="widget.js"]');
   if (!script) return;
 
+  // Пометка, что афиша не официальный сервис министерства (ТЗ §13). Сайт-хозяин может заменить текст атрибутом data-disclaimer.
+  var DISCLAIMER = 'Неофициальный сервис: не является сервисом Министерства культуры Республики Башкортостан. Данные из открытых источников, уточняйте у организатора.';
   var origin = new URL(script.src, location.href).origin;
   var cfg = script.dataset;
   var host = cfg.target ? document.querySelector(cfg.target) : null;
@@ -33,6 +36,7 @@
     '.b{display:inline-block;margin-left:6px;padding:0 7px;border-radius:999px;font-size:.78em;background:rgba(200,120,0,.18)}' +
     '.b.cancelled{background:rgba(200,30,30,.18)}' +
     '.f{margin-top:8px;font-size:.88em}.f a{color:inherit}' +
+    '.n{margin-top:6px;opacity:.7;font-size:.8em}' +
     '.e{opacity:.75}';
   root.innerHTML = '<style>' + css + '</style><div class="w"><h2></h2><div class="body e">Загрузка афиши…</div></div>';
   root.querySelector('h2').textContent = cfg.title || 'Афиша событий';
@@ -73,7 +77,8 @@
         var place = [e.venue, e.city].filter(Boolean).join(', ');
         return '<li><div class="t">' + title + badge + '</div><div class="m">' + esc(when(e)) +
           (place ? ' · ' + esc(place) : '') + ' · ' + esc(e.price_text) + (Number(e.age_limit) > 0 ? ' · ' + Number(e.age_limit) + '+' : '') + '</div></li>';
-      }).join('') + '</ul><div class="f"><a href="' + esc(origin) + '/" target="_blank" rel="noopener">Вся афиша →</a></div>';
+      }).join('') + '</ul><div class="f"><a href="' + esc(origin) + '/" target="_blank" rel="noopener">Вся афиша →</a></div>' +
+        '<div class="n">' + esc(cfg.disclaimer || DISCLAIMER) + '</div>';
     })
     .catch(function () {
       var body = root.querySelector('.body');
