@@ -94,6 +94,13 @@ def load_queries(path: Path | str = DEFAULT_QUERIES) -> list[dict]:
 
 # ---------- прогон ----------
 
+FALLBACK_STREAK_LIMIT = 3
+
+
+class EvalAborted(RuntimeError):
+    """Прогон с моделью остановлен: модель недоступна, а метрики ответов правил нельзя записывать как метрики модели."""
+
+
 @contextmanager
 def agent_mode(mode: str):
     with mock.patch.object(config, "AGENT_MODE", mode):
@@ -148,7 +155,8 @@ def evaluate(session, q: dict, turns: list[Turn], prompt_text: str) -> Outcome:
     reply, events = last.reply, last.events
     constraints = q.get("constraints", {})
     shown_ids = [e.id for e in events]
-    db_titles = list(session.scalars(select(Event.title)))
+    # Название площадки в «ёлочках» («театр «Нур»») тоже взято из базы: это не выдуманное событие
+    db_titles = list(session.scalars(select(Event.title))) + [v for v in session.scalars(select(Event.venue).distinct()) if v]
     user_text = " ".join(t.text for t in turns)
 
     # Общее для всех ответов диалога: числа и названия, отменённые события, выдуманные названия, утечки
@@ -268,9 +276,16 @@ def run_queries(session, queries: list[dict], *, mode: str, client=None, pause: 
     """Прогоняет набор в одном режиме. Возвращает исход по каждому запросу, включая прогон поиска по ключевым словам."""
     prompt_text = build_system_prompt(session, NOW, "EVAL-CANARY")
     outcomes = []
+    streak = 0
     with agent_mode(mode):
         for q in queries:
             turns = ask_dialog(session, q, client, pause)
+            if mode == "llm":
+                # ответ правилами вместо модели (лимиты ключа, сеть) нельзя выдавать за ответ модели
+                streak = streak + 1 if any(t.trace.flags.get("fallback_reason") for t in turns) else 0
+                if streak >= FALLBACK_STREAK_LIMIT or any("PerDay" in str(t.trace.flags.get("fallback_reason", "")) for t in turns):
+                    raise EvalAborted(f"Gemini не отвечает (квота ключа или сеть): после {len(outcomes) + 1} запросов прогон остановлен, "
+                                      f"отчёт не записан. Причина последнего сбоя: {str(turns[-1].trace.flags.get('fallback_reason', ''))[:160]}")
             out = evaluate(session, q, turns, prompt_text)
             found = keyword_search(session, q["turns"][-1], NOW)
             out.baseline_ids = [e.id for e in found]
@@ -464,6 +479,8 @@ def run_mode(mode: str, queries: list[dict], *, client=None, pause: float = 0.0,
         "model": config.GEMINI_MODEL if mode == "llm" else "— (режим правил)",
         "tariff": {"input": config.LLM_PRICE_INPUT_RUB_PER_M, "output": config.LLM_PRICE_OUTPUT_RUB_PER_M},
         "events_in_db": session.query(Event).count(), "queries": len(queries), "passed": sum(o.ok for o in outcomes),
+        "model_answers": sum(1 for o in outcomes if o.last.mode == "llm"),
+        "pre_model": sum(1 for o in outcomes if o.last.mode != "llm" and not o.last.trace.flags.get("fallback_reason")),
         "metrics": metrics, "baseline": base, "stability": stable, "flags": flags,
         "outcomes": [_outcome_dict(o) for o in outcomes],
     }
@@ -507,7 +524,11 @@ def main(argv: list[str] | None = None) -> int:
     queries = load_queries(args.queries)
     exit_code = 0
     for mode in modes:
-        summary = run_mode(mode, queries, pause=args.pause, stability=not args.skip_stability)
+        try:
+            summary = run_mode(mode, queries, pause=args.pause, stability=not args.skip_stability)
+        except EvalAborted as err:
+            print(f"[{mode}] {err}", file=sys.stderr)
+            return 3
         md_path, json_path = write_report(summary, Path(args.out), Path(args.queries).name, default=Path(args.queries).resolve() == DEFAULT_QUERIES)
         failed = [m for m in summary["metrics"] if m["status"] == "fail"]
         print(f"[{mode}] запросов {summary['queries']}, без замечаний {summary['passed']}, порогов не выполнено {len(failed)}")

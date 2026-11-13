@@ -108,6 +108,50 @@ def test_model_answers_are_judged_by_the_same_checks(monkeypatch):
     assert metrics[2]["status"] == "fail" and metrics[1]["status"] == "fail"
 
 
+def test_quoted_venue_name_is_not_an_invented_event():
+    from app.models import Event
+
+    session = build_session()
+    venue = next(v for (v,) in session.query(Event.venue).distinct() if "«" in (v or ""))
+    quoted = venue[venue.index("«") + 1:venue.index("»")]
+    reply = final(f"Ничего не нашлось, но загляните в «{quoted}». Рекомендую «Рок-опера Тень».", [])
+
+    class Venue(FakeGemini):
+        def generate_content(self, **kwargs):
+            self.calls.append(kwargs)
+            return reply
+
+    (outcome,) = run.run_queries(session, [q for q in run.load_queries() if q["id"] == "n05"], mode="llm", client=Venue())
+    assert outcome.invented == ["Рок-опера Тень"]  # площадка названа верно, выдумано только событие
+
+
+def test_run_stops_when_the_model_is_unavailable_instead_of_reporting_rules_as_the_model(monkeypatch):
+    """Бесплатный ключ исчерпал квоту: 52 ответа из 60 дали бы правила, а отчёт назвал бы их ответами модели."""
+    queries = [q for q in run.load_queries() if q["kind"] == "search"][:6]
+
+    class Quota(FakeGemini):
+        def generate_content(self, **kwargs):
+            raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+    with pytest.raises(run.EvalAborted) as err:
+        run.run_queries(build_session(), queries, mode="llm", client=Quota())
+    assert "отчёт не записан" in str(err.value)
+
+    class DailyQuota(FakeGemini):
+        def generate_content(self, **kwargs):
+            raise RuntimeError("429 RESOURCE_EXHAUSTED GenerateRequestsPerDayPerProjectPerModel-FreeTier")
+
+    with pytest.raises(run.EvalAborted):  # суточная квота: ждать бессмысленно, останавливаемся сразу
+        run.run_queries(build_session(), queries[:1], mode="llm", client=DailyQuota())
+
+
+def test_report_says_how_many_answers_came_from_the_model():
+    summary = run.run_mode("rules", [q for q in run.load_queries() if q["id"] == "n05"], stability=False)
+    assert "| Ответов модели | — |" in render(summary, "queries.json")
+    summary.update(mode="llm", model_answers=1, pre_model=0, queries=3, prompt_version="x", model="m")
+    assert "Прогон недействителен" in render(summary, "queries.json") and "1 из 3" in render(summary, "queries.json")
+
+
 def test_spending_requires_explicit_confirmation(capsys, monkeypatch):
     assert run.main(["--mode", "llm"]) == 2
     assert "--confirm-spend" in capsys.readouterr().err

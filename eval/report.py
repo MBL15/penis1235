@@ -29,7 +29,11 @@ def render(summary: dict, queries_name: str) -> str:
         f"| База | {summary['events_in_db']} событий: образцы `data/sample_events.json` и 4 записи для проверок; «сейчас» зафиксировано на {summary['now']} |",
         f"| Тариф | {_tariff(summary['tariff'], mode)} |",
         f"| Запросов без замечаний | {summary['passed']} из {summary['queries']} |",
+        f"| Ответов модели | {summary['model_answers']} из {summary['queries']} (остальные: правила после сбоя модели или отказ до обращения к ней) |"
+        if mode == "llm" else "| Ответов модели | — |",
         "",
+        *([f"> **Прогон недействителен как измерение модели:** на {summary['queries'] - summary['model_answers']} запросов из {summary['queries']} ответила не модель. "
+           "Метрики ниже смешаны с ответами правил."] + [""] if mode == "llm" and summary["model_answers"] < summary["queries"] - summary["pre_model"] else []),
         "## Метрики (ТЗ §9.2, пороги уровня 3)",
         "",
         "| № | Метрика | Значение | Порог | Итог | Как посчитано |", "|---|---|---|---|---|---|",
