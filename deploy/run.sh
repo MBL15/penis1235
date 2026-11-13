@@ -8,7 +8,7 @@ DATA="$PWD/data"
 chmod 700 "$DATA"
 chmod 600 "$DATA"/*.db .env .env.bot 2>/dev/null || true
 
-sudo docker build -q -t afisha:latest .
+sudo docker build -q -f deploy/Dockerfile.offline -t afisha:latest .
 
 # Общие ограничения: не root, файловая система только для чтения (пишем лишь в /data и /tmp), без привилегий
 # и возможностей ядра, потолок по памяти и числу процессов.

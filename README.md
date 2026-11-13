@@ -32,7 +32,20 @@
 | Открытый REST API, документация | `/docs` (Swagger), `/openapi.json`, CORS открыт на чтение |
 | Виджет для сайта министерства без вмешательства в его системы | `/widget.js`, пример на `/widget-demo` |
 
-## Быстрый старт (Windows, PowerShell)
+## Запуск одной командой (Docker)
+
+```bash
+docker compose up --build            # сайт и API: http://localhost:8000, документация: /docs
+docker compose --profile bot up --build   # то же и Telegram-бот (нужен TELEGRAM_BOT_TOKEN в .env)
+```
+
+Нужен только Docker. Файл `.env` необязателен: без него работают сайт, API и режим «без ИИ» (образец: `.env.example`).
+При первом запуске подгружается `data/sample_events.json`: 120 реальных событий из открытых афиш на 13.11.2026 (источник
+записан у каждого, повторная загрузка дублей не создаёт). Отключить: `LOAD_SAMPLE_DATA=0`. База хранится в томе
+`afisha-data`, порт меняется переменной `WEB_PORT`. Образ строится из PyPI; на сервере без доступа к PyPI используется
+`deploy/Dockerfile.offline` (см. [docs/04](docs/04-сервер-и-эксплуатация.md)).
+
+## Быстрый старт без Docker (Windows, PowerShell)
 
 ```powershell
 cd afisha

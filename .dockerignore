@@ -1,0 +1,19 @@
+# В образ попадают только app/, data/sample_events.json, deploy/entrypoint.sh и requirements.txt (см. Dockerfile).
+# Всё остальное в контекст сборки не отправляется: секреты, базы, окружение разработчика.
+.git
+.venv
+node_modules
+__pycache__
+*.pyc
+.pytest_cache
+.env
+.env.*
+!.env.example
+*.db
+release.tgz
+tests
+docs
+frontend
+scripts
+upd.md
+data/yandex_afisha_urls.json

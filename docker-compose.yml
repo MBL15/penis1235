@@ -1,0 +1,55 @@
+# Запуск одной командой:  docker compose up --build
+# Сайт и API: http://localhost:8000 (порт меняется переменной WEB_PORT), документация API: /docs.
+# Telegram-бот включается отдельно, ему нужен TELEGRAM_BOT_TOKEN в файле .env:  docker compose --profile bot up --build
+# Файл .env необязателен: без него работают сайт, API и режим «без ИИ». Образец: .env.example.
+name: afisha
+
+x-hardening: &hardening
+  image: afisha:latest
+  user: "1000:1000"
+  read_only: true
+  tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  mem_limit: 512m
+  pids_limit: 200
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  volumes:
+    - afisha-data:/data
+
+services:
+  web:
+    <<: *hardening
+    build: .
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    environment:
+      HOME: /tmp
+      DATABASE_URL: sqlite:////data/afisha.db
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8000}
+      LOAD_SAMPLE_DATA: ${LOAD_SAMPLE_DATA:-1}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  bot:
+    <<: *hardening
+    profiles: ["bot"]
+    command: ["python", "-m", "app.bot"]
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      HOME: /tmp
+      DATABASE_URL: sqlite:////data/afisha.db
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8000}
+      LOAD_SAMPLE_DATA: "0"
+
+volumes:
+  afisha-data:
