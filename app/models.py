@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from .config import now_local
@@ -40,3 +40,18 @@ class Event(Base):
     search_text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_local, onupdate=now_local)
+
+
+class Subscription(Base):
+    """Подписка на новые события: только номер чата Telegram и фильтры. Ничего другого о человеке не хранится (ТЗ §10)."""
+
+    __tablename__ = "subscriptions"
+    __table_args__ = (UniqueConstraint("chat_id", "city", "category", name="uq_subscription"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    city: Mapped[str] = mapped_column(String(64), default="")  # пусто = любой город
+    category: Mapped[str] = mapped_column(String(32), default="")  # пусто = любая категория
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=now_local)  # события, добавленные позже, считаются новыми
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

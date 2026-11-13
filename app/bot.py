@@ -14,7 +14,7 @@ from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, Message, WebAppInfo,
@@ -22,12 +22,12 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.orm import Session
 
-from . import config
+from . import config, subscriptions
 from .agent import ask
 from .config import now_local
 from .db import SessionLocal, init_db
 from .formatting import render_event, render_list
-from .models import Event
+from .models import Event, Subscription
 from .normalize import CATEGORIES
 from .search import SearchFilters, facets, get_event, resolve_when, search
 from .security import RateLimiter
@@ -56,6 +56,9 @@ chat_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=10))
 # одновременно (иначе один человек занимает все потоки и квоту).
 ai_limiter = RateLimiter(limit=8, detail="Слишком много вопросов подряд. Подождите минуту и спросите ещё раз.")
 ai_busy: set[int] = set()
+# Начатая подписка: чат → выбранный город («» = вся республика). Живёт до выбора категории или /cancel.
+sub_draft: dict[int, str] = {}
+NOTIFY_EVERY = 30 * 60  # как часто проверяем, есть ли что отправить подписчикам (сама рассылка: не чаще раза в сутки)
 
 
 def _forget_oldest(store: dict, limit: int = MAX_CHATS) -> None:
@@ -68,7 +71,22 @@ WELCOME = (
     "События республики из открытых источников: без дублей, со статусами отмен и переносов.\n\n"
     "Нажмите кнопку или просто напишите, что ищете, например:\n"
     "<i>«куда пойти в субботу с ребёнком до 1000 рублей»</i>\n\n"
-    "Город: /city · Категории: /categories\n\n"
+    "Город: /city · Категории: /categories\n"
+    "Новые события по городу и категории: /subscribe · отписка: /unsubscribe · справка: /help\n\n"
+    f"<i>ℹ️ {html.escape(config.DISCLAIMER)}</i>"
+)
+
+SUB_PRIVACY = f"Храню только номер чата и выбранные фильтры, до отписки, но не дольше {subscriptions.RETENTION_DAYS // 30} месяцев."
+
+HELP = (
+    "<b>Что умеет бот</b>\n"
+    "• Кнопки меню: сегодня, завтра, выходные, неделя, бесплатно, детям.\n"
+    "• Просто напишите запрос: <i>«концерт в Стерлитамаке в субботу до 1500 рублей»</i>.\n"
+    "• /city — выбрать город, /categories — категории, /app — афиша в окне Telegram.\n"
+    "• /subscribe — подписаться на новые события города и категории. Пишу не чаще раза в сутки, днём, не больше пяти событий.\n"
+    "• /subscriptions — мои подписки, /unsubscribe — отписаться от всех одной командой.\n"
+    "• /cancel — отменить начатое действие.\n\n"
+    f"{SUB_PRIVACY}\n\n"
     f"<i>ℹ️ {html.escape(config.DISCLAIMER)}</i>"
 )
 
@@ -200,7 +218,8 @@ def menu_markup(city: str | None = None) -> InlineKeyboardMarkup:
         kb.button(text=label, callback_data=f"l:{kind}:0")
     kb.button(text=f"📍 {city or 'Вся республика'}", callback_data="cities")
     kb.button(text="🗂 Категории", callback_data="cats")
-    kb.adjust(3, 3, 2)
+    kb.button(text="🔔 Подписки", callback_data="fs:list")
+    kb.adjust(3, 3, 3)
     markup = kb.as_markup()
     if config.WEBAPP_URL:  # главная кнопка: открыть афишу внутри Telegram
         markup.inline_keyboard.insert(0, [InlineKeyboardButton(text="🗓 Открыть афишу", web_app=WebAppInfo(url=config.WEBAPP_URL))])
@@ -302,9 +321,21 @@ def agent_view(chat_id: int, text: str) -> View:
 # ---------- обработчики ----------
 
 @router.message(CommandStart())
-@router.message(Command("help"))
 async def on_start(message: Message) -> None:
     await message.answer(WELCOME, reply_markup=menu_markup(chat_city.get(message.chat.id)))
+
+
+@router.message(Command("help"))
+async def on_help(message: Message) -> None:
+    await message.answer(HELP, reply_markup=menu_markup(chat_city.get(message.chat.id)), disable_web_page_preview=True)
+
+
+@router.message(Command("cancel"))
+async def on_cancel(message: Message) -> None:
+    """Сбрасывает начатое действие (сейчас это оформление подписки): выбранные, но не подтверждённые условия забываются."""
+    pending = sub_draft.pop(message.chat.id, None) is not None
+    text = "Отменил. Подписка не оформлена." if pending else "Отменять нечего."
+    await message.answer(f"{text} Меню: /start", reply_markup=menu_markup(chat_city.get(message.chat.id)))
 
 
 @router.message(Command(*QUICK))
@@ -414,6 +445,195 @@ async def on_event(call: CallbackQuery) -> None:
     await call.answer()
 
 
+# ---------- подписки на новые события ----------
+
+def sub_cities_view(session: Session) -> View:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Вся республика", callback_data="fs:c:-")
+    for city in facets(session)["cities"]:
+        if len(f"fs:c:{city['name']}".encode()) <= 64:  # лимит Telegram на данные кнопки
+            kb.button(text=city["name"], callback_data=f"fs:c:{city['name']}")
+    kb.adjust(2)
+    return View("🔔 <b>Подписка на новые события</b>\nВыберите город (отменить: /cancel):", kb.as_markup())
+
+
+def sub_categories_view(city: str) -> View:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Любая категория", callback_data="fs:k:-")
+    for slug, label in CATEGORIES.items():
+        kb.button(text=label, callback_data=f"fs:k:{slug}")
+    kb.adjust(2)
+    return View(f"Город: <b>{html.escape(city) if city else 'вся республика'}</b>. Какая категория интересна?", kb.as_markup())
+
+
+def subs_list_view(subs: list[Subscription]) -> View:
+    kb = InlineKeyboardBuilder()
+    if subs:
+        for sub in subs:
+            kb.button(text=f"✖ {subscriptions.describe(sub)}"[:40], callback_data=f"fs:d:{sub.id}")
+        kb.button(text="🔕 Отписаться от всех", callback_data="fs:da")
+        text = "🔔 <b>Ваши подписки</b> (нажмите, чтобы удалить):\n" + "\n".join(
+            f"• {html.escape(subscriptions.describe(s))}" for s in subs)
+    else:
+        text = "Подписок нет. Подпишитесь на новые события города и категории: /subscribe"
+    kb.button(text="➕ Добавить подписку", callback_data="fs:new")
+    kb.button(text="🏠 Меню", callback_data="menu")
+    kb.adjust(1)
+    return View(text, kb.as_markup())
+
+
+@router.message(Command("subscribe"))
+async def on_subscribe(message: Message) -> None:
+    with SessionLocal() as session:
+        view = sub_cities_view(session)
+    await message.answer(view.text, reply_markup=view.markup)
+
+
+@router.callback_query(F.data == "fs:new")
+async def on_sub_new(call: CallbackQuery) -> None:
+    with SessionLocal() as session:
+        view = sub_cities_view(session)
+    await call.message.answer(view.text, reply_markup=view.markup)
+    await call.answer()
+
+
+@router.message(Command("subscriptions"))
+async def on_subscriptions(message: Message) -> None:
+    with SessionLocal() as session:
+        view = subs_list_view(subscriptions.list_for(session, message.chat.id))
+    await message.answer(view.text, reply_markup=view.markup)
+
+
+@router.callback_query(F.data == "fs:list")
+async def on_sub_list(call: CallbackQuery) -> None:
+    with SessionLocal() as session:
+        view = subs_list_view(subscriptions.list_for(session, call.message.chat.id))
+    await call.message.answer(view.text, reply_markup=view.markup)
+    await call.answer()
+
+
+@router.message(Command("unsubscribe"))
+async def on_unsubscribe(message: Message) -> None:
+    """Отписка одной командой: удаляет все подписки чата вместе с данными."""
+    sub_draft.pop(message.chat.id, None)
+    with SessionLocal() as session:
+        removed = subscriptions.remove_all(session, message.chat.id)
+    await message.answer(f"🔕 Подписки удалены ({removed}), данные стёрты." if removed else "Подписок нет.")
+
+
+@router.callback_query(F.data.startswith("fs:c:"))
+async def on_sub_city(call: CallbackQuery) -> None:
+    name = call.data.removeprefix("fs:c:")
+    chat_id = call.message.chat.id
+    with SessionLocal() as session:
+        known = [c["name"] for c in facets(session)["cities"]]
+    if name != "-" and name not in known:  # данные кнопки может подделать клиент, а город мог пропасть из афиши
+        await call.answer(STALE, show_alert=True)
+        return
+    sub_draft[chat_id] = "" if name == "-" else name
+    _forget_oldest(sub_draft)
+    view = sub_categories_view(sub_draft[chat_id])
+    await call.message.answer(view.text, reply_markup=view.markup)
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("fs:k:"))
+async def on_sub_category(call: CallbackQuery) -> None:
+    slug = call.data.removeprefix("fs:k:")
+    chat_id = call.message.chat.id
+    category = "" if slug == "-" else slug
+    if (category and category not in CATEGORIES) or chat_id not in sub_draft:
+        await call.answer(STALE, show_alert=True)
+        return
+    city = sub_draft.pop(chat_id)
+    label = html.escape(subscriptions.describe(Subscription(city=city, category=category)))
+    with SessionLocal() as session:
+        result = subscriptions.add(session, chat_id, city, category)
+    text = {
+        "added": f"✅ Подписал: {label}.\nПрисылаю новые события не чаще раза в сутки, днём, не больше пяти. "
+                 f"{SUB_PRIVACY}\nОтписаться: /unsubscribe",
+        "exists": f"Такая подписка уже есть: {label}.",
+        "limit": f"Можно не больше {subscriptions.MAX_PER_CHAT} подписок. Удалите лишнюю: /subscriptions",
+    }[result]
+    await call.message.answer(text, reply_markup=menu_markup(chat_city.get(chat_id)))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("fs:d:"))
+async def on_sub_delete(call: CallbackQuery) -> None:
+    match = re.fullmatch(r"fs:d:([0-9]{1,9})", call.data or "")
+    if not match:
+        await call.answer(STALE, show_alert=True)
+        return
+    with SessionLocal() as session:
+        removed = subscriptions.remove(session, call.message.chat.id, int(match.group(1)))
+        view = subs_list_view(subscriptions.list_for(session, call.message.chat.id))
+    await call.answer("Подписка удалена" if removed else "Такой подписки уже нет")
+    await call.message.answer(view.text, reply_markup=view.markup)
+
+
+@router.callback_query(F.data == "fs:da")
+async def on_sub_delete_all(call: CallbackQuery) -> None:
+    with SessionLocal() as session:
+        removed = subscriptions.remove_all(session, call.message.chat.id)
+    await call.answer("Подписки удалены" if removed else "Подписок нет")
+    await call.message.answer("🔕 Подписки удалены, данные стёрты." if removed else "Подписок нет.")
+
+
+async def send_digests(bot: Bot, now=None) -> int:
+    """Отправляет подборки новых событий подписчикам. Возвращает число отправленных сообщений."""
+
+    def collect() -> list[subscriptions.Digest]:
+        with SessionLocal() as session:
+            return subscriptions.due_digests(session, now)
+
+    def finish(digest: subscriptions.Digest, *, blocked: bool) -> None:
+        with SessionLocal() as session:
+            if blocked:
+                subscriptions.remove_all(session, digest.chat_id)
+            else:
+                subscriptions.mark_sent(session, digest, now)
+
+    sent = 0
+    for digest in await asyncio.to_thread(collect):
+        more = digest.total - len(digest.events)
+        text = (
+            f"🔔 <b>Новое по вашим подпискам</b> ({html.escape('; '.join(digest.labels))})\n\n"
+            + render_list(digest.events, html=True)
+            + (f"\n\nИ ещё {more}: откройте афишу командой /start." if more > 0 else "")
+            + "\n\nОтписаться: /unsubscribe"
+        )
+        kb = InlineKeyboardBuilder()
+        for number, event in enumerate(digest.events, 1):
+            kb.button(text=f"{number}. {event.title[:28]}", callback_data=f"e:{event.id}")
+        kb.adjust(1)
+        try:
+            await bot.send_message(digest.chat_id, clip(text), reply_markup=kb.as_markup(), disable_web_page_preview=True)
+        except TelegramForbiddenError:  # человек заблокировал бота: подписка ему больше не нужна, данные удаляем
+            await asyncio.to_thread(finish, digest, blocked=True)
+            continue
+        except TelegramAPIError as exc:  # временный сбой: события дождутся следующей проверки
+            log.warning("Не удалось отправить подборку: %s", exc)
+            continue
+        await asyncio.to_thread(finish, digest, blocked=False)
+        sent += 1
+        await asyncio.sleep(0.05)  # Telegram ограничивает частоту отправки
+    return sent
+
+
+async def notify_loop(bot: Bot) -> None:
+    while True:
+        try:
+            sent = await send_digests(bot)
+            if sent:
+                log.info("Отправлено подборок по подпискам: %d", sent)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Ошибка рассылки по подпискам")
+        await asyncio.sleep(NOTIFY_EVERY)
+
+
 @router.message(F.text)
 async def on_text(message: Message) -> None:
     user_id = message.from_user.id if message.from_user else message.chat.id
@@ -454,7 +674,11 @@ async def run() -> None:
          BotCommand(command="free", description="Бесплатно"),
          BotCommand(command="kids", description="Детям"),
          BotCommand(command="city", description="Выбрать город"),
-         BotCommand(command="categories", description="Категории")]
+         BotCommand(command="categories", description="Категории"),
+         BotCommand(command="subscribe", description="Подписаться на новые события"),
+         BotCommand(command="unsubscribe", description="Отписаться от всех подписок"),
+         BotCommand(command="cancel", description="Отменить действие"),
+         BotCommand(command="help", description="Справка")]
     )
     if config.WEBAPP_URL:
         try:  # кнопка «Афиша» слева от поля ввода открывает мини-приложение
@@ -471,7 +695,11 @@ async def run() -> None:
             log.error("ПОДПИСКА НА %s НЕ ПРОВЕРИТЬ (%s): назначьте бота администратором канала, "
                       "иначе бот никого не пропустит", config.REQUIRED_CHANNEL, exc)
     log.info("Бот запущен (мини-приложение: %s)", config.WEBAPP_URL or "не подключено")
-    await dp.start_polling(bot)
+    notifier = asyncio.create_task(notify_loop(bot))  # ссылку держим, иначе задачу может собрать сборщик мусора
+    try:
+        await dp.start_polling(bot)
+    finally:
+        notifier.cancel()
 
 
 def main() -> None:

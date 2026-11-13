@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 from aiogram import Bot, Dispatcher
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
 
-from app import bot, config
+from app import bot, config, subscriptions
 from .demo_data import seed
 
 from .test_formatting_and_bot import _Ctx
@@ -40,6 +40,7 @@ def wired(session, monkeypatch):
     monkeypatch.setattr(Bot, "send_chat_action", typing)
     bot.chat_city.clear()
     bot.chat_history.clear()
+    bot.sub_draft.clear()
     bot.ai_limiter.hits.clear()
     bot.ai_busy.clear()
     return SimpleBot(answer, cb_answer)
@@ -271,3 +272,117 @@ def test_state_dictionaries_do_not_grow_forever():
     store = {i: i for i in range(10)}
     bot._forget_oldest(store, limit=4)
     assert list(store) == [6, 7, 8, 9]
+
+
+# ---------- подписки на новые события и /cancel (ТЗ §6.2) ----------
+
+def callbacks_of(markup):
+    return [b.callback_data for row in markup.inline_keyboard for b in row if b.callback_data]
+
+
+def test_subscribe_flow_stores_only_the_chat_and_the_filters(dispatcher, wired, session):
+    wired.say(dispatcher, "/subscribe")
+    assert "Выберите город" in wired.last_text
+    cities = callbacks_of(wired.last_markup)
+    assert "fs:c:-" in cities and "fs:c:Уфа" in cities
+    wired.press(dispatcher, "fs:c:Уфа")
+    assert "fs:k:theatre" in callbacks_of(wired.last_markup) and "fs:k:-" in callbacks_of(wired.last_markup)
+    wired.press(dispatcher, "fs:k:theatre")
+    assert "Подписал: Уфа · Театр" in wired.last_text and "не чаще раза в сутки" in wired.last_text
+    (sub,) = subscriptions.list_for(session, CHAT)
+    assert (sub.chat_id, sub.city, sub.category) == (CHAT, "Уфа", "theatre")
+
+
+def test_whole_republic_and_any_category_are_allowed(dispatcher, wired, session):
+    wired.say(dispatcher, "/subscribe")
+    wired.press(dispatcher, "fs:c:-")
+    wired.press(dispatcher, "fs:k:-")
+    (sub,) = subscriptions.list_for(session, CHAT)
+    assert (sub.city, sub.category) == ("", "")
+    wired.press(dispatcher, "fs:c:-")
+    wired.press(dispatcher, "fs:k:-")
+    assert "уже есть" in wired.last_text and len(subscriptions.list_for(session, CHAT)) == 1
+
+
+def test_cancel_drops_an_unfinished_subscription(dispatcher, wired, session):
+    wired.say(dispatcher, "/cancel")
+    assert "Отменять нечего" in wired.last_text
+    wired.press(dispatcher, "fs:c:Уфа")
+    wired.say(dispatcher, "/cancel")
+    assert "Подписка не оформлена" in wired.last_text and wired.last_markup.inline_keyboard
+    wired.press(dispatcher, "fs:k:theatre")  # кнопка осталась в чате, но выбор города уже забыт
+    assert wired.cb_answer.call_args.kwargs.get("show_alert") is True
+    assert subscriptions.list_for(session, CHAT) == []
+
+
+@pytest.mark.parametrize("data", ["fs:c:Несуществующий", "fs:k:<script>", "fs:k:theatre", "fs:d:abc", "fs:d:"])
+def test_forged_or_stale_subscription_buttons_do_nothing(dispatcher, wired, session, data):
+    wired.press(dispatcher, data)  # для fs:k:theatre черновика нет: город не выбран
+    assert wired.cb_answer.call_args.kwargs.get("show_alert") is True
+    assert subscriptions.list_for(session, CHAT) == []
+
+
+def test_unsubscribe_is_one_command_and_wipes_everything(dispatcher, wired, session):
+    subscriptions.add(session, CHAT, "Уфа", "theatre")
+    subscriptions.add(session, CHAT, "", "")
+    subscriptions.add(session, CHAT + 1, "Уфа", "")  # чужая подписка остаётся
+    wired.say(dispatcher, "/unsubscribe")
+    assert "Подписки удалены (2)" in wired.last_text
+    assert subscriptions.list_for(session, CHAT) == [] and len(subscriptions.list_for(session, CHAT + 1)) == 1
+    wired.say(dispatcher, "/unsubscribe")
+    assert wired.last_text == "Подписок нет."
+
+
+def test_list_of_subscriptions_lets_you_delete_one(dispatcher, wired, session):
+    subscriptions.add(session, CHAT, "Уфа", "theatre")
+    subscriptions.add(session, CHAT, "", "concert")
+    wired.say(dispatcher, "/subscriptions")
+    assert "Уфа · Театр" in wired.last_text
+    first = next(c for c in callbacks_of(wired.last_markup) if c.startswith("fs:d:"))
+    wired.press(dispatcher, first)
+    assert len(subscriptions.list_for(session, CHAT)) == 1
+    wired.press(dispatcher, "fs:da")
+    assert subscriptions.list_for(session, CHAT) == []
+
+
+def test_menu_and_help_lead_to_subscriptions_and_state_the_privacy_terms(dispatcher, wired):
+    wired.say(dispatcher, "/start")
+    assert "fs:list" in callbacks_of(wired.last_markup) and "/subscribe" in wired.last_text
+    wired.say(dispatcher, "/help")
+    for needle in ("/subscribe", "/unsubscribe", "/cancel", "номер чата", "12 месяцев"):
+        assert needle in wired.last_text, needle
+
+
+@pytest.fixture
+def digest_ready(session, add, monkeypatch):
+    monkeypatch.setattr(bot, "SessionLocal", lambda: _Ctx(session))
+    send = AsyncMock()
+    monkeypatch.setattr(Bot, "send_message", send)
+    subscriptions.add(session, CHAT, "Уфа", "")
+    sub = subscriptions.list_for(session, CHAT)[0]
+    sub.created_at = sub.checked_at = datetime(2026, 11, 9)
+    event, _ = add("Новый концерт", datetime(2026, 11, 12, 19, 0), city="Уфа", category="concert", price_min=500)
+    event.created_at = datetime(2026, 11, 10, 10, 0)
+    session.commit()
+    return send
+
+
+NOON = datetime(2026, 11, 10, 12, 0)
+
+
+def test_digest_goes_out_once_with_buttons_and_the_unsubscribe_hint(session, digest_ready):
+    assert asyncio.run(bot.send_digests(Bot(TOKEN), NOON)) == 1
+    chat_id, text = digest_ready.call_args.args[:2]
+    assert chat_id == CHAT and "Новый концерт" in text and "/unsubscribe" in text
+    assert any(c.startswith("e:") for c in callbacks_of(digest_ready.call_args.kwargs["reply_markup"]))
+    assert asyncio.run(bot.send_digests(Bot(TOKEN), NOON + timedelta(hours=1))) == 0  # в тот же день повторно не пишем
+    assert digest_ready.await_count == 1
+
+
+def test_blocked_bot_removes_the_subscription_and_a_flaky_send_keeps_it(session, digest_ready):
+    digest_ready.side_effect = TelegramBadRequest(method=None, message="Bad Request: temporary")
+    assert asyncio.run(bot.send_digests(Bot(TOKEN), NOON)) == 0
+    assert len(subscriptions.list_for(session, CHAT)) == 1  # сбой временный: попробуем в следующий раз
+    digest_ready.side_effect = TelegramForbiddenError(method=None, message="Forbidden: bot was blocked by the user")
+    assert asyncio.run(bot.send_digests(Bot(TOKEN), NOON)) == 0
+    assert subscriptions.list_for(session, CHAT) == []  # заблокировал бота: данные стираем
