@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .config import now_local
 from .formatting import ONGOING_GRACE
 from .models import Event
-from .normalize import ACTIVE_STATUSES, canonical_category, canonical_city, stem, tokens
+from .normalize import ACTIVE_STATUSES, canonical_category, canonical_city, norm_text, stem, tokens
 
 WHEN_VALUES = ("today", "tomorrow", "weekend", "week")
 MAX_QUERY_WORDS = 8  # каждое слово — отдельный LIKE по всей таблице: длинный запрос не должен её перебирать сотни раз
@@ -26,6 +26,8 @@ class SearchFilters:
     age: int | None = None  # возраст посетителя: показываем события с ограничением не выше
     kids: bool | None = None  # True — только «детские/семейные»
     statuses: list[str] | None = None  # None = только состоявшиеся; ["all"] = любые
+    venue: str | None = None  # площадка: часть названия (сравнивается по нормализованному тексту)
+    include_drafts: bool = False  # черновики видит только модератор
     include_past: bool = False
     sort: str = "date"  # date | price
     limit: int = 20
@@ -61,6 +63,12 @@ def resolve_when(when: str, today: date) -> tuple[date, date]:
 
 def _conditions(f: SearchFilters, now: datetime) -> list:
     conds = []
+    if not f.include_drafts:
+        conds.append(or_(Event.publication.is_(None), Event.publication != "draft"))
+    if f.venue:
+        key = norm_text(f.venue[:200])
+        if key:
+            conds.append(Event.venue_key.like(f"%{key}%"))
 
     if not f.include_past:
         conds.append(
@@ -122,8 +130,12 @@ def search(session: Session, f: SearchFilters, now: datetime | None = None) -> t
     return list(session.scalars(stmt)), total
 
 
-def get_event(session: Session, event_id: int) -> Event | None:
-    return session.get(Event, event_id)
+def get_event(session: Session, event_id: int, *, include_drafts: bool = False) -> Event | None:
+    """Событие по номеру. Черновик отдаётся только с include_drafts (модератору): публике он не существует."""
+    event = session.get(Event, event_id)
+    if event is not None and event.publication == "draft" and not include_drafts:
+        return None
+    return event
 
 
 def facets(session: Session, now: datetime | None = None) -> dict:

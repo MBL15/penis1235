@@ -1,21 +1,21 @@
 """Открытая часть REST API: чтение афиши, справочники, вопрос ИИ-помощнику. Подключается дважды: /api/v1 и /api (старые пути)."""
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, Response
 from sqlalchemy import select, text
 
-from . import config
+from . import audit, config
 from .agent import ask as agent_ask
 from .auth import require_admin
 from .config import now_local
 from .deps import SessionDep
 from .formatting import event_to_out
 from .http_cache import cached_json
-from .ingest import upsert_event
 from .models import Event
 from .normalize import CATEGORIES, STATUSES, canonical_category, norm_text
 from .observability import metrics
+from .pipeline import process_batch, process_record
 from .schemas import (
     AskIn,
     AskOut,
@@ -25,6 +25,7 @@ from .schemas import (
     EventList,
     EventOut,
     IngestResult,
+    RejectedRecord,
     StatusPatch,
 )
 from .search import WHEN_VALUES, SearchFilters, facets, get_event, resolve_when, search
@@ -126,37 +127,47 @@ def health(session: SessionDep) -> dict:
 # ---------- приём данных (нужен ключ X-API-Key) ----------
 
 @router.post("/events", response_model=IngestResult, status_code=200, tags=["Приём данных"],
-             dependencies=[Depends(require_admin)], summary="Добавить событие (с дедупликацией)")
-def create_event(payload: EventIn, session: SessionDep) -> IngestResult:
-    event, outcome = upsert_event(session, payload)
-    return IngestResult(outcome=outcome, event=event_to_out(event))
+             summary="Добавить событие (с дедупликацией)")
+def create_event(payload: EventIn, session: SessionDep, actor: Annotated[str, Depends(require_admin)]) -> IngestResult:
+    """Одно и то же событие из разных источников склеивается в одну запись. Правка попадает в журнал изменений."""
+    result = process_record(session, payload, actor=actor)
+    return IngestResult(outcome=result.status, event=event_to_out(result.event))
 
 
-@router.post("/events/bulk", response_model=BulkIngestResult, tags=["Приём данных"],
-             dependencies=[Depends(require_admin)], summary="Добавить пачку событий")
-def create_events_bulk(payload: list[EventIn], session: SessionDep) -> BulkIngestResult:
+@router.post("/events/bulk", response_model=BulkIngestResult, tags=["Приём данных"], summary="Добавить пачку событий")
+def create_events_bulk(
+    payload: Annotated[list[Any], Body(description="Список событий в формате EventIn (до 500 за запрос)")],
+    session: SessionDep,
+    actor: Annotated[str, Depends(require_admin)],
+    publish: Annotated[bool, Query(description="false: новые события сохраняются черновиками для модерации")] = True,
+) -> BulkIngestResult:
+    """Плохая запись не отклоняет всю пачку: в ответе `rejected` перечисляет отклонённые записи и причины по-русски."""
     if len(payload) > 500:
         raise HTTPException(413, "За один запрос принимается не больше 500 событий")
-    stats = {"created": 0, "merged": 0, "unchanged": 0}
-    events: dict[int, Event] = {}
-    for item in payload:
-        event, outcome = upsert_event(session, item)
-        stats[outcome] += 1
-        events[event.id] = event
+    report = process_batch(session, payload, actor=actor, publish=publish)
+    ids = list(dict.fromkeys(report.event_ids))
+    events = {e.id: e for e in session.scalars(select(Event).where(Event.id.in_(ids)))} if ids else {}
     now = now_local()
-    return BulkIngestResult(**stats, events=[event_to_out(e, now) for e in events.values()])
+    return BulkIngestResult(
+        created=report.created, updated=report.updated, merged=report.updated, unchanged=report.unchanged,
+        rejected=[RejectedRecord(row=r.row, title=r.title, reasons=r.reasons) for r in report.rejected],
+        total=report.total, events=[event_to_out(events[i], now) for i in ids if i in events],
+    )
 
 
 @router.patch("/events/{event_id}/status", response_model=EventOut, tags=["Приём данных"],
-              dependencies=[Depends(require_admin)], summary="Сменить статус (отмена, перенос, аншлаг)")
-def patch_status(event_id: Annotated[int, Path(ge=1, le=2**31 - 1)], payload: StatusPatch, session: SessionDep) -> EventOut:
-    event = get_event(session, event_id)
+              summary="Сменить статус (отмена, перенос, аншлаг)")
+def patch_status(event_id: Annotated[int, Path(ge=1, le=2**31 - 1)], payload: StatusPatch, session: SessionDep,
+                 actor: Annotated[str, Depends(require_admin)]) -> EventOut:
+    event = get_event(session, event_id, include_drafts=True)
     if event is None:
         raise HTTPException(404, "Событие не найдено")
+    before = audit.snapshot(event)
     event.status = payload.status
     # Ручная правка ложится на все источники: свежая выгрузка одного из них не вернёт старый статус, пока он сам не
     # пришлёт новый (источник остаётся авторитетом для собственного статуса).
     event.sources = [{**s, "status": payload.status} for s in event.sources or []]
+    audit.record(session, actor, "status", event.id, audit.diff(before, audit.snapshot(event)))
     session.commit()
     return event_to_out(event)
 

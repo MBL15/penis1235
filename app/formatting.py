@@ -99,6 +99,7 @@ def event_to_out(event: Event, now: datetime | None = None) -> EventOut:
         image_url=event.image_url or "",
         status=event.status,
         status_label=STATUSES.get(event.status, event.status),
+        publication=event.publication or "published",
         is_past=is_past(event, now),
         sources=sources,
         source_count=len(sources),

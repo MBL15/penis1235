@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from .config import LOCAL_TZ
 
 StatusName = Literal["scheduled", "rescheduled", "sold_out", "cancelled"]
+PublicationName = Literal["published", "draft"]
 MAX_PRICE = 10_000_000  # ₽; заодно защищает от переполнения INTEGER в базе
 
 
@@ -45,6 +46,8 @@ class EventIn(BaseModel):
     url: str = Field("", max_length=500)
     image_url: str = Field("", max_length=500)
     status: StatusName = "scheduled"
+    publication: PublicationName = Field(
+        "published", description="published — видно всем, draft — черновик для модерации (виден только администратору)")
     source: str = Field(min_length=1, max_length=100, description="Имя источника, например bashopera.ru")
     source_url: str = Field("", max_length=500)
 
@@ -121,6 +124,7 @@ class EventOut(BaseModel):
     image_url: str
     status: str
     status_label: str
+    publication: str = Field("published", description="published | draft (черновик виден только администратору)")
     is_past: bool
     sources: list[SourceRef]
     source_count: int
@@ -139,11 +143,22 @@ class IngestResult(BaseModel):
     event: EventOut
 
 
+class RejectedRecord(BaseModel):
+    row: int = Field(description="Номер записи в файле или пачке (с 1; в CSV первая строка данных — 2)")
+    title: str = ""
+    reasons: list[str] = Field(description="Что не так, по-русски: «поле: причина»")
+
+
 class BulkIngestResult(BaseModel):
+    """Отчёт о загрузке: добавлено, обновлено, отклонено и почему (ТЗ §6.1). merged — прежнее имя поля updated."""
+
     created: int
+    updated: int = 0
     merged: int
     unchanged: int
-    events: list[EventOut]
+    rejected: list[RejectedRecord] = Field(default_factory=list)
+    total: int = 0
+    events: list[EventOut] = Field(default_factory=list)
 
 
 class StatusPatch(BaseModel):

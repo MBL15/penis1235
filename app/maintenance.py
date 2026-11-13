@@ -4,6 +4,8 @@
   python -m app.maintenance series --apply    # исправить их (делайте копию базы перед этим)
   python -m app.maintenance demo-reset        # показать выдуманные демо-события (источники «demo-*»), если они попали в базу
   python -m app.maintenance demo-reset --apply  # удалить их; реальные события не трогаются
+  python -m app.maintenance reprocess [--source kassir.ru]          # сколько сырых записей будет переиграно
+  python -m app.maintenance reprocess [--source kassir.ru] --apply  # переиграть нормализацию и слияние без нового сбора
 """
 import argparse
 import sys
@@ -56,8 +58,9 @@ def reset_demo(session: Session) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Служебные операции с базой")
-    parser.add_argument("task", choices=["series", "demo-reset"])
+    parser.add_argument("task", choices=["series", "demo-reset", "reprocess"])
     parser.add_argument("--apply", action="store_true", help="записать изменения (без флага только показывает)")
+    parser.add_argument("--source", help="reprocess: только записи этого источника")
     args = parser.parse_args(argv)
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -68,6 +71,22 @@ def main(argv: list[str] | None = None) -> int:
     from .formatting import is_demo
 
     init_db()
+    if args.task == "reprocess":
+        from sqlalchemy import func
+
+        from .models import RawRecord
+        from .pipeline import reprocess_raw
+
+        with SessionLocal() as session:
+            if not args.apply:
+                count = session.scalar(select(func.count()).select_from(RawRecord).where(
+                    RawRecord.outcome != "rejected", *([RawRecord.source == args.source] if args.source else []))) or 0
+                print(f"Сырых записей для переигрывания: {count} (запустите с --apply)")
+            else:
+                report = reprocess_raw(session, source=args.source, actor="reprocess")
+                print(f"Создано: {report.created}, обновлено: {report.updated}, без изменений: {report.unchanged}, "
+                      f"не прошло проверку: {len(report.rejected)}")
+        return 0
     if args.task == "demo-reset":
         with SessionLocal() as session:
             if not args.apply:

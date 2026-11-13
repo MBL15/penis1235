@@ -18,17 +18,14 @@ import sys
 from collections import Counter
 from collections.abc import Callable, Iterable
 
-from pydantic import ValidationError
-
-from .ingest import upsert_detailed
-from .schemas import EventIn
+from .pipeline import process_record
 from .sources import culture_ru, kassir, kudago, sites, yandex_afisha
 from .sources.base import BlockedError, SourceError
 
 SOURCES = ("culture-ru", "yandex-afisha", "kassir", "kudago", "sites")
 
 
-def sync_records(session, records) -> dict[str, int]:
+def sync_records(session, records, *, actor: str = "sync") -> dict[str, int]:
     """Как ingest_records, но битая запись не обрывает всю загрузку.
 
     created: новое событие; merged: то же событие обновлено (в том числе уточнено другим источником);
@@ -36,14 +33,13 @@ def sync_records(session, records) -> dict[str, int]:
     unchanged: ничего нового; skipped: запись не прошла проверку."""
     stats = {"created": 0, "merged": 0, "unchanged": 0, "skipped": 0, "cross_source": 0}
     for record in records:
-        try:
-            _, outcome, cross = upsert_detailed(session, EventIn.model_validate(record))
-        except ValidationError as exc:
+        result = process_record(session, record, actor=actor)  # сырая запись и журнал пишутся внутри
+        if result.status == "rejected":
             stats["skipped"] += 1
-            print(f"пропущено: {record.get('title')!r}: {exc.errors()[0]['msg']}", file=sys.stderr)
+            print(f"пропущено: {record.get('title')!r}: {result.reasons[0]}", file=sys.stderr)
             continue
-        stats[outcome] += 1
-        stats["cross_source"] += int(cross)
+        stats[result.status] += 1
+        stats["cross_source"] += int(result.cross_source)
     return stats
 
 
@@ -107,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         with SessionLocal() as session:
             if args.drop_demo and name == names[0]:
                 print(f"Удалено демо-событий: {reset_demo(session)}")
-            stats = sync_records(session, records)
+            stats = sync_records(session, records, actor=f"sync:{name}")
         totals.update(stats)
         print(
             f"[{name}] получено {len(records)}; создано {stats['created']}, обновлено/склеено {stats['merged']} "

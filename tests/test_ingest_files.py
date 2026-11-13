@@ -2,7 +2,6 @@ import json
 from datetime import datetime, timedelta
 
 import pytest
-from pydantic import ValidationError
 
 from app.config import now_local
 from app.ingest import ingest_records, load_records
@@ -17,7 +16,7 @@ def test_json_import_with_duplicates_across_sources(session, tmp_path):
         {"title": "Осенний вальс", "start_at": START.isoformat(), "source": "b.example", "price_max": 600},
         {"title": "Выставка кукол", "start_at": START.isoformat(), "source": "a.example", "category": "Выставка"},
     ], ensure_ascii=False), encoding="utf-8")
-    assert ingest_records(session, load_records(path)) == {"created": 2, "merged": 1, "unchanged": 0}
+    assert ingest_records(session, load_records(path)) == {"created": 2, "merged": 1, "unchanged": 0, "rejected": 0}
 
 
 def test_csv_import_handles_blanks_and_age_strings(session, tmp_path):
@@ -39,9 +38,12 @@ def test_csv_import_handles_blanks_and_age_strings(session, tmp_path):
     assert run.price_min is None and run.kids_friendly is False
 
 
-def test_invalid_record_is_rejected(session):
-    with pytest.raises(ValidationError):
-        ingest_records(session, [{"title": "Без источника", "start_at": datetime(2026, 11, 8).isoformat()}])
+def test_invalid_record_is_rejected_and_does_not_stop_the_rest(session):
+    stats = ingest_records(session, [
+        {"title": "Без источника", "start_at": datetime(2026, 11, 8).isoformat()},
+        {"title": "Нормальное", "start_at": datetime(2026, 11, 8, 19).isoformat(), "source": "t"},
+    ])
+    assert stats == {"created": 1, "merged": 0, "unchanged": 0, "rejected": 1}
 
 
 def test_unknown_file_format_is_rejected(tmp_path):
