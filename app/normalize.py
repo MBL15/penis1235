@@ -1,5 +1,6 @@
 """Нормализация текста, городов и категорий: основа для поиска и дедупликации."""
 import re
+from difflib import SequenceMatcher
 
 CATEGORIES: dict[str, str] = {
     "theatre": "Театр",
@@ -117,6 +118,32 @@ def canonical_city(value: str | None) -> str | None:
 
 def find_city_in_text(text: str) -> str | None:
     return _match_city(tokens(text))
+
+
+# Месяцы похожи на названия городов («октябрь» ~ «Октябрьский»): к ним нечёткий поиск не применяется.
+_MONTH_STEMS = ("январ", "феврал", "март", "апрел", "мая", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр")
+FUZZY_MIN_RATIO = 0.8
+
+
+def find_city_fuzzy(text: str) -> tuple[str, str] | None:
+    """Город, написанный с опечаткой: («Стерлитамак», «стерлитакмае»). None, если ничего похожего нет.
+
+    Вызывать только для запросов пользователя после точного поиска: для адресов из источников нечёткое совпадение
+    опасно. Короткие названия и формы (до 6 букв) исправлению не подлежат: слишком много случайных совпадений."""
+    for word in tokens(text):
+        if len(word) < 6 or word.startswith(_MONTH_STEMS) or word.isdigit():
+            continue
+        best: tuple[float, str] | None = None
+        for city, forms in CITY_FORMS.items():
+            for form in forms:
+                if len(form) < 7:
+                    continue
+                ratio = SequenceMatcher(None, word[: len(form) + 1], form).ratio()
+                if ratio >= FUZZY_MIN_RATIO and (best is None or ratio > best[0]):
+                    best = (ratio, city)
+        if best is not None:
+            return best[1], word
+    return None
 
 
 def guess_category(text: str) -> str | None:

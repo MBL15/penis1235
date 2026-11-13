@@ -57,3 +57,61 @@ def test_without_a_gemini_key_the_rules_answer(session, seeded, monkeypatch):
     monkeypatch.setattr(config, "GEMINI_API_KEY", "")
     assert not agent.llm_enabled()
     assert agent.ask(session, "в воскресенье", now=NOW).mode == "rules"
+
+
+# ---------- ТЗ §2, §7.3, Приложение А: честные ответы без ИИ ----------
+
+def test_missing_keyword_is_reported_instead_of_substituting_other_concerts(session, add):
+    add("Концерт «Цвети, республика моя!»", datetime(2026, 11, 10, 14, 0), city="Салават", category="concert", price_min=350)
+    result = agent.ask(session, "Есть ли в Салавате джаз на следующей неделе?", now=NOW)
+    assert "событий со словом «джаз» не нашлось" in result.reply  # раньше отвечало «Нашёл 1 событие» про не-джаз
+    assert [e.title for e in result.events] == ["Концерт «Цвети, республика моя!»"]
+
+
+def test_existing_keyword_is_found(session, add):
+    add("Джазовый вечер", datetime(2026, 11, 10, 20, 0), city="Салават", category="concert", price_min=800)
+    add("Эстрадный концерт", datetime(2026, 11, 10, 14, 0), city="Салават", category="concert", price_min=350)
+    result = agent.ask(session, "Есть ли в Салавате джаз на следующей неделе?", now=NOW)
+    assert [e.title for e in result.events] == ["Джазовый вечер"] and "не нашлось" not in result.reply
+
+
+def test_the_blocking_condition_is_named(session, seeded):
+    result = agent.ask(session, "в воскресенье до 100 рублей", now=NOW)
+    assert "Ослабил условие по цене: именно оно мешало" in result.reply
+
+
+def test_city_typo_is_fixed_and_the_user_is_told(session, add):
+    add("Концерт в Стерлитамаке", datetime(2026, 11, 8, 19, 0), city="Стерлитамак", category="concert", price_min=500)
+    add("Концерт в Уфе", datetime(2026, 11, 8, 19, 0), city="Уфа", category="concert", price_min=500)
+    result = agent.ask(session, "Концерт в стерлитакмае в воскресенье", now=NOW)
+    assert [e.title for e in result.events] == ["Концерт в Стерлитамаке"]
+    assert "Поправил опечатку: «стерлитакмае» → Стерлитамак" in result.reply
+
+
+def test_unchecked_conditions_are_never_dropped_silently(session, add):
+    add("Спектакль «Макбет»", datetime(2026, 11, 8, 12, 0), city="Стерлитамак", category="theatre", price_min=500)
+    result = agent.ask(
+        session, "В воскресенье в Стерлитамаке, закончилось не позже 20:00 и ехать не больше 20 минут", now=NOW)
+    assert result.events and "Не смог учесть" in result.reply
+    assert "не позже 20:00" in result.reply and "ехать не больше 20 минут" in result.reply
+
+
+def test_language_requests_are_declared_unsupported(session, seeded):
+    result = agent.ask(session, "детям в воскресенье на башкирском языке", now=NOW)
+    assert "язык мероприятия" in result.reply and "Не смог учесть" in result.reply
+
+
+def test_group_budget_is_applied_per_ticket(session, add):
+    add("Недорогой спектакль", datetime(2026, 11, 8, 12, 0), category="theatre", price_min=400, price_max=450)
+    add("Дорогой спектакль", datetime(2026, 11, 8, 18, 0), category="theatre", price_min=900, price_max=1500)
+    result = agent.ask(session, "спектакли в воскресенье до 1000 рублей на двоих", now=NOW)
+    assert [e.title for e in result.events] == ["Недорогой спектакль"]  # 500 ₽ за билет
+    assert "500 ₽ за билет (1000 ₽ на двоих)" in result.reply
+
+
+def test_subscription_requests_are_pointed_to_the_bot_and_change_nothing(session, seeded):
+    from app.models import Subscription
+
+    result = agent.ask(session, "Перенеси мою подписку на другой город", now=NOW)
+    assert "/subscribe" in result.reply and "/unsubscribe" in result.reply and not result.events
+    assert session.query(Subscription).count() == 0
