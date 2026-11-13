@@ -7,7 +7,7 @@ from .formatting import MONTHS_GEN, WEEKDAYS_FULL
 from .normalize import CATEGORIES
 from .search import facets
 
-PROMPT_VERSION = "p2-2026-11-13"
+PROMPT_VERSION = "p3-2026-11-13"
 MAX_SHOWN = 5
 MAX_TOOL_CALLS = 5
 
@@ -44,4 +44,4 @@ def build_system_prompt(session: Session, now: datetime, canary: str) -> str:
 Сейчас в афише. Города (событий): {cities}.
 Категории: {categories}.
 
-Финальный ответ — JSON-объект {{"reply": "...", "event_ids": [...], "needs_clarification": false}}. В event_ids только id событий, которые ты получил из инструментов в этом диалоге, в порядке показа."""
+Финальный ответ — только JSON-объект {{"reply": "...", "event_ids": [...], "needs_clarification": false}}, без текста до и после него. В event_ids только id событий, которые ты получил из инструментов в этом диалоге, в порядке показа. Каждое событие, которое ты назвал в reply, обязательно должно быть и в event_ids: иначе у человека не появится карточка. Если ты ничего не называешь в reply, event_ids пустой."""

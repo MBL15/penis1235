@@ -123,3 +123,59 @@ def test_subscription_requests_are_pointed_to_the_bot_and_change_nothing(session
     result = agent.ask(session, "Перенеси мою подписку на другой город", now=NOW)
     assert "/subscribe" in result.reply and "/unsubscribe" in result.reply and not result.events
     assert session.query(Subscription).count() == 0
+
+
+# ---------- карточки по названиям, если модель не вернула event_ids ----------
+
+def _final(reply, ids=None, **extra):
+    import json
+
+    return json.dumps({"reply": reply, "event_ids": ids if ids is not None else [], "needs_clarification": False, **extra}, ensure_ascii=False)
+
+
+@pytest.fixture
+def named(add):
+    events = [add(title, datetime(2026, 11, 8, 12 + number, 0), category="concert")[0]
+              for number, title in enumerate(["Джазовый вечер", "Лекция", "Лекция о Дале", "Выставка «Золотая Орда»"])]
+    return {e.id: e for e in events}, events
+
+
+def test_cards_are_built_from_titles_named_in_the_reply_when_the_model_forgets_event_ids(named):
+    seen, (jazz, lecture, lecture_dal, expo) = named
+    result = agent._result_from_final(_final("Вот что нашлось: выставка «Золотая Орда» и Джазовый вечер, оба подходят."), seen, {})
+    assert [e.id for e in result.events] == [expo.id, jazz.id] and result.ids_from_text  # в порядке упоминания
+
+
+def test_plain_text_answer_without_json_still_gets_cards(named):
+    seen, (jazz, *_rest) = named
+    result = agent._result_from_final("В субботу есть Джазовый вечер, начало в 12:00.", seen, {})
+    assert [e.id for e in result.events] == [jazz.id] and result.ids_from_text
+
+
+def test_ids_from_the_model_are_never_overridden_by_titles(named):
+    seen, (jazz, lecture, lecture_dal, expo) = named
+    result = agent._result_from_final(_final("Советую Джазовый вечер и выставку «Золотая Орда».", [expo.id]), seen, {})
+    assert [e.id for e in result.events] == [expo.id] and not result.ids_from_text
+
+
+def test_no_cards_for_a_clarifying_question_or_for_a_reply_that_names_nothing(named):
+    seen, (jazz, *_rest) = named
+    assert not agent._result_from_final(_final("Уточните день. Например, про Джазовый вечер?", needs_clarification=True), seen, {}).events
+    result = agent._result_from_final(_final("Подходящих событий не нашлось, попробуйте другой день."), seen, {})
+    assert result.events == [] and not result.ids_from_text
+
+
+def test_a_short_title_inside_a_longer_one_is_not_a_second_event_and_cancelled_events_are_not_recommended(named):
+    seen, (jazz, lecture, lecture_dal, expo) = named
+    result = agent._result_from_final(_final("Приходите на Лекция о Дале."), seen, {})
+    assert [e.id for e in result.events] == [lecture_dal.id]  # «Лекция» не добавляется отдельной карточкой
+    expo.status = "cancelled"
+    result = agent._result_from_final(_final("Выставка «Золотая Орда» отменена."), seen, {})
+    assert result.events == []
+
+
+def test_only_events_returned_by_tools_can_become_cards(named, add):
+    seen, _ = named
+    stranger, _ = add("Балет «Жизель»", datetime(2026, 11, 9, 19, 0), category="theatre")  # в базе есть, поиск его не вернул
+    result = agent._result_from_final(_final("Ещё есть Балет «Жизель»."), seen, {})
+    assert result.events == []

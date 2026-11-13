@@ -57,6 +57,7 @@ class AgentResult:
     provider: str = ""  # gemini | groq | "" (режим правил)
     trace_id: str = ""  # ссылка на трассу ответа
     pending_actions: list[dict] = field(default_factory=list)  # предложенные действия: ждут подтверждения человеком
+    ids_from_text: bool = False  # модель не вернула event_ids, карточки собраны по названиям из её ответа
 
 
 # ---------- публичная точка входа ----------
@@ -167,11 +168,33 @@ def _history_messages(history: list[dict]) -> list[dict]:
     return messages
 
 
+def mentioned_events(reply: str, seen: dict[int, Event]) -> list[Event]:
+    """События из результатов инструментов, названные в тексте ответа, в порядке упоминания. Отменённые не берём: их не
+    рекомендуют, а об отмене говорят словами. Выдумать событие так нельзя: берутся только те, что вернул поиск."""
+    haystack = f" {norm_text(reply)} "
+    found: list[tuple[int, str, Event]] = []
+    for event in seen.values():
+        key = norm_text(event.title)
+        if event.status == "cancelled" or len(key) < 4:
+            continue
+        position = haystack.find(f" {key} ")
+        if position >= 0:
+            found.append((position, key, event))
+    # «Лекция» внутри «Лекция о Даля»: короткое название, которое лишь часть найденного длинного, не считаем отдельным событием
+    found = [item for item in found if not any(item[1] != other[1] and item[1] in other[1] for other in found)]
+    return [event for _, _, event in sorted(found, key=lambda item: item[0])]
+
+
 def _result_from_final(text: str, seen: dict[int, Event], last_filters: dict) -> AgentResult:
-    """Финальный ответ модели (JSON) → результат. Рекомендовать можно только события, которые вернул поиск."""
+    """Финальный ответ модели (JSON) → результат. Рекомендовать можно только события, которые вернул поиск.
+
+    Лёгкие модели иногда отвечают обычным текстом или забывают `event_ids`, хотя события в тексте названы: тогда карточки
+    собираются из названий, найденных в ответе (флаг трассы `event_ids_from_text`), чтобы подборка не осталась без карточек."""
     data = _parse_final(text)
     if data is None:
-        return AgentResult(reply=text or "Не удалось сформулировать ответ.", events=[], mode="llm", filters=last_filters)
+        reply = text or "Не удалось сформулировать ответ."
+        shown = mentioned_events(reply, seen)[:MAX_SHOWN]
+        return AgentResult(reply=reply, events=shown, mode="llm", filters=last_filters, ids_from_text=bool(shown))
     ids = []
     raw_ids = data.get("event_ids")
     for value in raw_ids if isinstance(raw_ids, list) else []:
@@ -179,13 +202,13 @@ def _result_from_final(text: str, seen: dict[int, Event], last_filters: dict) ->
             continue
         ids.append(int(value))  # Gemini иногда присылает числа как 12.0
     shown = [seen[i] for i in dict.fromkeys(ids) if i in seen][:MAX_SHOWN]
-    return AgentResult(
-        reply=str(data["reply"]).strip(),
-        events=shown,
-        needs_clarification=bool(data.get("needs_clarification")),
-        mode="llm",
-        filters=last_filters,
-    )
+    reply, clarifying = str(data["reply"]).strip(), bool(data.get("needs_clarification"))
+    from_text = False
+    if not shown and not clarifying:
+        shown = mentioned_events(reply, seen)[:MAX_SHOWN]
+        from_text = bool(shown)
+    return AgentResult(reply=reply, events=shown, needs_clarification=clarifying, mode="llm", filters=last_filters,
+                       ids_from_text=from_text)
 
 
 # ---------- режим llm: Google Gemini (AI Studio) ----------
@@ -373,6 +396,8 @@ def _checked(result: AgentResult, ctx: ToolContext, canary: str) -> AgentResult:
         missing = ungrounded_numbers(result.reply, " ".join(ctx.source_text))
         if missing:
             trace.flag("ungrounded_numbers", missing[:10])
+    if result.ids_from_text and result.events:
+        trace.flag("event_ids_from_text", [e.id for e in result.events])
     trace.plan = {"filters": ctx.last_filters, "tool_calls": ctx.calls}
     result.pending_actions = ctx.pending
     if ctx.pending:
