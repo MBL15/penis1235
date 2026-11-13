@@ -47,7 +47,7 @@ def test_https_responses_carry_hsts(session):
 
 def test_pages_have_no_inline_scripts_or_handlers():
     """CSP запрещает встроенные скрипты: если они вернутся в разметку, страница молча сломается."""
-    for name in ("index.html", "widget-demo.html"):
+    for name in ("index.html", "widget-demo.html", "admin.html", "feedback.html"):
         html = (STATIC / name).read_text(encoding="utf-8")
         assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html), name
         assert not re.search(r"\son[a-z]+\s*=", html), name
@@ -55,7 +55,7 @@ def test_pages_have_no_inline_scripts_or_handlers():
 
 
 def client_served_scripts_exist() -> bool:
-    return all((STATIC / name).is_file() for name in ("boot.js", "widget-demo.js", "app.js", "widget.js"))
+    return all((STATIC / name).is_file() for name in ("boot.js", "widget-demo.js", "app.js", "widget.js", "admin.js", "feedback.js"))
 
 
 # ---------- чужие сайты ----------

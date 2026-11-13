@@ -28,6 +28,7 @@ class SearchFilters:
     statuses: list[str] | None = None  # None = только состоявшиеся; ["all"] = любые
     venue: str | None = None  # площадка: часть названия (сравнивается по нормализованному тексту)
     include_drafts: bool = False  # черновики видит только модератор
+    publication: str | None = None  # модератору: draft — только черновики, published — только опубликованные
     include_past: bool = False
     sort: str = "date"  # date | price
     limit: int = 20
@@ -63,7 +64,9 @@ def resolve_when(when: str, today: date) -> tuple[date, date]:
 
 def _conditions(f: SearchFilters, now: datetime) -> list:
     conds = []
-    if not f.include_drafts:
+    if f.publication == "draft":
+        conds.append(Event.publication == "draft")
+    elif f.publication == "published" or not f.include_drafts:
         conds.append(or_(Event.publication.is_(None), Event.publication != "draft"))
     if f.venue:
         key = norm_text(f.venue[:200])

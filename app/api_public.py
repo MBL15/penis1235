@@ -3,12 +3,26 @@ from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 
 from . import audit, config
 from .agent import ask as agent_ask
 from .auth import require_admin
 from .config import now_local
+from .feedback import (
+    KINDS,
+    MIN_SECONDS,
+    FeedbackAccepted,
+    FeedbackIn,
+    check_content,
+    check_token,
+    feedback_global_limiter,
+    feedback_limiter,
+    issue_token,
+    purge_old,
+    save_feedback,
+)
 from .deps import SessionDep
 from .formatting import event_to_out
 from .http_cache import cached_json
@@ -198,6 +212,43 @@ def patch_status(event_id: Annotated[int, Path(ge=1, le=2**31 - 1)], payload: St
     audit.record(session, actor, "status", event.id, audit.diff(before, audit.snapshot(event)))
     session.commit()
     return event_to_out(event)
+
+
+# ---------- обратная связь ----------
+
+@router.get("/feedback/form", tags=["Обратная связь"], summary="Метка формы обратной связи")
+def feedback_form() -> JSONResponse:
+    """Подписанная серверная метка времени: форму нельзя отправить мгновенно, как это делают роботы. Не кешируется."""
+    return JSONResponse({"token": issue_token(), "min_seconds": MIN_SECONDS,
+                         "kinds": [{"slug": slug, "label": label} for slug, label in KINDS.items()]},
+                        headers={"Cache-Control": "no-store"})
+
+
+@router.post("/feedback", response_model=FeedbackAccepted, tags=["Обратная связь"], dependencies=[Depends(feedback_limiter)],
+             summary="Отправить обращение или заявку организатора")
+def send_feedback(payload: FeedbackIn, session: SessionDep) -> FeedbackAccepted:
+    """Защита от спама: поле-ловушка `website`, метка времени формы, лимит с одного адреса, не больше двух ссылок, отсев повторов.
+    Контакт необязателен. Обращения хранятся не дольше 180 дней (обработанные 90)."""
+    thanks = FeedbackAccepted(message="Спасибо! Обращение принято, модератор рассмотрит его.")
+    if payload.website.strip():  # роботы заполняют все поля подряд: делаем вид, что приняли, и ничего не сохраняем
+        metrics.inc("afisha_feedback_total", result="honeypot")
+        return thanks
+    reason = check_token(payload.token)
+    if reason:
+        metrics.inc("afisha_feedback_total", result="rejected_form")
+        raise HTTPException(422, reason)
+    if not feedback_global_limiter.allow("all"):
+        raise HTTPException(429, feedback_global_limiter.detail, headers={"Retry-After": "3600"})
+    reason = check_content(payload.message)
+    if reason:
+        metrics.inc("afisha_feedback_total", result="rejected_content")
+        raise HTTPException(422, reason)
+    if payload.event_id is not None and get_event(session, payload.event_id) is None:
+        raise HTTPException(422, "Такого события нет: проверьте номер или уберите его")
+    purge_old(session)
+    _, result = save_feedback(session, payload)
+    metrics.inc("afisha_feedback_total", result=result)
+    return thanks
 
 
 # ---------- ИИ-поиск ----------

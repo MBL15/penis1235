@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Администрирование — Афиша культуры Башкортостана</title>
+  <script src="/static/boot.js"></script>
+  <link rel="stylesheet" href="/static/tailwind.css">
+</head>
+<body class="min-h-screen bg-art bg-[#eef2fb] bg-fixed text-ink antialiased">
+  <header class="mx-auto flex max-w-[1160px] flex-wrap items-center justify-between gap-3 px-4 pt-4">
+    <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-white">← К афише</a>
+    <div class="flex items-center gap-3">
+      <span id="actor" class="text-[.95rem] font-semibold text-ink-3" hidden></span>
+      <button type="button" id="logout" class="min-h-[40px] rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink shadow-surface hover:bg-white" hidden>Выйти</button>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-[1160px] px-4 pb-12 pt-5">
+    <h1 class="m-0 mb-4 text-[1.8rem] font-extrabold tracking-[-.02em]">Администрирование афиши</h1>
+
+    <section id="login" class="grid max-w-[480px] gap-3 rounded-panel border border-stroke bg-glass-hi p-6 shadow-surface" aria-labelledby="login-title">
+      <h2 id="login-title" class="m-0 text-[1.1rem] font-extrabold">Вход по ключу доступа</h2>
+      <form id="login-form" class="grid gap-3" autocomplete="off">
+        <label class="grid gap-[6px] text-[.82rem] font-bold tracking-[.02em] text-ink-3"><span>Ключ (заголовок X-API-Key)</span>
+          <input id="key" type="password" required minlength="8" autocomplete="off" class="min-h-[48px] w-full rounded-field border border-line bg-glass-field px-[14px] py-[10px] text-base font-medium text-ink tx-field focus-visible:border-brand focus-visible:shadow-focus focus-visible:outline-none"></label>
+        <button type="submit" class="min-h-[48px] rounded-ctl bg-brand px-6 font-bold text-white shadow-cta tx-btn hover:bg-brand-hover">Войти</button>
+        <p id="login-error" role="alert" class="m-0 text-[.95rem] font-semibold text-bad" hidden></p>
+      </form>
+      <p class="m-0 text-[.85rem] text-ink-3">Ключ хранится только в этой вкладке и пропадает при закрытии. Все изменения записываются в журнал под вашим именем.</p>
+    </section>
+
+    <div id="app" hidden>
+      <div class="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Разделы">
+        <button type="button" role="tab" data-tab="queue" aria-selected="true" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Очередь модерации <span id="queue-count" class="ml-1 rounded-full bg-white/75 px-2 text-[.78rem] font-bold text-ink-2"></span></button>
+        <button type="button" role="tab" data-tab="events" aria-selected="false" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Все события</button>
+        <button type="button" role="tab" data-tab="import" aria-selected="false" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Импорт файла</button>
+        <button type="button" role="tab" data-tab="audit" aria-selected="false" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Журнал изменений</button>
+        <button type="button" role="tab" data-tab="feedback" aria-selected="false" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Обращения <span id="feedback-count" class="ml-1 rounded-full bg-white/75 px-2 text-[.78rem] font-bold text-ink-2"></span></button>
+      </div>
+      <p id="notice" role="status" class="mb-3 rounded-ctl bg-ok-bg px-4 py-2 font-semibold text-ok" hidden></p>
+      <p id="problem" role="alert" class="mb-3 rounded-ctl bg-bad-bg px-4 py-2 font-semibold text-bad" hidden></p>
+      <section id="panel" class="rounded-panel border border-stroke bg-glass-hi p-5 shadow-surface w600:p-3" aria-live="polite"></section>
+    </div>
+  </main>
+
+  <!-- Карточка события: создание и правка -->
+  <dialog id="edit-dialog" class="w-[min(680px,94vw)] rounded-panel border border-stroke bg-glass-solid p-0 text-ink shadow-surface-2 backdrop:bg-[rgba(23,32,54,.38)]">
+    <form id="edit-form" method="dialog" class="grid gap-3 p-5">
+      <h2 id="edit-title" class="m-0 text-[1.2rem] font-extrabold">Событие</h2>
+      <div class="grid grid-cols-2 gap-3 w600:grid-cols-1">
+        <label class="grid gap-[6px] text-[.82rem] font-bold text-ink-3 col-span-2 w600:col-span-1"><span>Название</span><input name="title" required minlength="2" maxlength="300" class="min-h-[44px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"></label>
+        <label class="grid gap-[6px] text-[.82rem] font-bold text-ink-3"><span>Начало</span><input name="start_at" type="datetime-local" required class="min-h-[44px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"></label>
+        <label class="grid gap-[6px] text-[.82rem] font-bold text-ink-3"><span>Окончание (необязательно)</span><input name="end_at" type="datetime-local" class="min-h-[44px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"></label>
+        <label class="grid gap-[6px] text-[.82rem] font-bold text-ink-3"><span>Категория</span><select name="category" class="min-h-[44px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"></select></label>
+        <label class="grid gap-[6px] text-[.82rem] font-bold text-ink-3"><span>Город</span><input name="city" maxlength="64" value="Уфа" class="min-h-[44px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"></label>
+        <label class="grid gap-[6px] text-[.82rem] font-bold text-ink-3"><span>Площадка</span><input name="venue" maxlength="200" class="min-h-[44px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"></label>
+        <label class="grid gap-[6px] text-[.82rem] font-bold text-ink-3"><span>Адрес</span><input name="address" maxlength="300" class="min-h-[44px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"></label>
+        <label class="grid gap-[6px] text-[.82rem] font-bold text-ink-3"><span>Цена от, ₽ (0 — бесплатно)</span><input name="price_min" type="number" min="0" class="min-h-[44px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"></label>
+        <label class="grid gap-[6px] text-[.82rem] font-bold text-ink-3"><span>Цена до, ₽</span><input name="price_max" type="number" min="0" class="min-h-[44px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"></label>
+        <label class="grid gap-[6px] text-[.82rem] font-bold text-ink-3"><span>Возраст (число или «12+»)</span><input name="age_limit" maxlength="16" class="min-h-[44px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"></label>
+        <label class="grid gap-[6px] text-[.82rem] font-bold text-ink-3"><span>Ссылка на источник или билеты</span><input name="url" type="url" maxlength="500" placeholder="https://" class="min-h-[44px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"></label>
+        <label class="grid gap-[6px] text-[.82rem] font-bold text-ink-3 col-span-2 w600:col-span-1"><span>Описание</span><textarea name="description" rows="5" maxlength="20000" class="rounded-field border border-line bg-glass-field px-3 py-2 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"></textarea></label>
+        <label id="create-only" class="grid gap-[6px] text-[.82rem] font-bold text-ink-3 col-span-2 w600:col-span-1" hidden><span>Публикация</span>
+          <select name="publication" class="min-h-[44px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none"><option value="published">Сразу опубликовать</option><option value="draft">Сохранить черновиком (на модерацию)</option></select></label>
+      </div>
+      <p id="edit-error" role="alert" class="m-0 font-semibold text-bad" hidden></p>
+      <div class="flex flex-wrap justify-end gap-3">
+        <button type="button" id="edit-cancel" class="min-h-[44px] rounded-ctl border border-stroke bg-glass-hi px-5 font-bold text-brand-ink hover:bg-white">Отмена</button>
+        <button type="submit" class="min-h-[44px] rounded-ctl bg-brand px-5 font-bold text-white shadow-cta hover:bg-brand-hover">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Журнал одного события -->
+  <dialog id="audit-dialog" class="w-[min(760px,94vw)] rounded-panel border border-stroke bg-glass-solid p-0 text-ink shadow-surface-2 backdrop:bg-[rgba(23,32,54,.38)]">
+    <div class="grid gap-3 p-5">
+      <h2 id="audit-title" class="m-0 text-[1.2rem] font-extrabold">Журнал события</h2>
+      <div id="audit-body" class="max-h-[60vh] overflow-auto"></div>
+      <div class="flex justify-end"><button type="button" id="audit-close" class="min-h-[44px] rounded-ctl border border-stroke bg-glass-hi px-5 font-bold text-brand-ink hover:bg-white">Закрыть</button></div>
+    </div>
+  </dialog>
+
+  <script src="/static/admin.js"></script>
+</body>
+</html>

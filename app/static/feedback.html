@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Обратная связь — Афиша культуры Башкортостана</title>
+  <meta name="description" content="Сообщить об ошибке в афише или отправить заявку организатора: добавить или уточнить событие.">
+  <script src="/static/boot.js"></script>
+  <link rel="stylesheet" href="/static/tailwind.css">
+</head>
+<body class="min-h-screen bg-art bg-[#eef2fb] bg-fixed text-ink antialiased">
+  <header class="mx-auto flex max-w-[820px] items-center justify-between gap-3 px-4 pt-4">
+    <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-white">← К афише</a>
+  </header>
+
+  <main class="mx-auto max-w-[820px] px-4 pb-12 pt-5">
+    <article class="grid gap-4 rounded-panel border border-stroke bg-glass-hi p-6 shadow-surface w600:p-4">
+      <h1 class="m-0 text-[length:clamp(1.6rem,4vw,2.2rem)] font-extrabold leading-[1.15] tracking-[-.02em]">Обратная связь</h1>
+      <p class="m-0 text-ink-2">Нашли ошибку в афише, хотите добавить событие вашего учреждения или есть вопрос? Напишите: обращение получит модератор.</p>
+
+      <form id="form" class="grid gap-4" novalidate>
+        <label class="grid gap-[6px] text-[.82rem] font-bold tracking-[.02em] text-ink-3"><span>О чём обращение</span>
+          <select id="kind" class="min-h-[48px] w-full rounded-field border border-line bg-glass-field px-[14px] py-[10px] text-base font-medium text-ink tx-field focus-visible:border-brand focus-visible:shadow-focus focus-visible:outline-none"></select></label>
+
+        <p id="event-note" class="m-0 rounded-ctl bg-brand-tint px-4 py-2 font-semibold text-brand-ink" hidden></p>
+
+        <label class="grid gap-[6px] text-[.82rem] font-bold tracking-[.02em] text-ink-3"><span>Ваше сообщение (от 10 до 2000 символов)</span>
+          <textarea id="message" rows="6" minlength="10" maxlength="2000" required class="w-full rounded-field border border-line bg-glass-field px-[14px] py-[10px] text-base font-medium text-ink tx-field focus-visible:border-brand focus-visible:shadow-focus focus-visible:outline-none" aria-describedby="counter"></textarea>
+          <small id="counter" class="font-medium text-ink-3">0 / 2000</small></label>
+
+        <label class="grid gap-[6px] text-[.82rem] font-bold tracking-[.02em] text-ink-3"><span>Как вам ответить (необязательно)</span>
+          <input id="contact" type="text" maxlength="200" autocomplete="off" placeholder="почта или @имя в Telegram" class="min-h-[48px] w-full rounded-field border border-line bg-glass-field px-[14px] py-[10px] text-base font-medium text-ink tx-field focus-visible:border-brand focus-visible:shadow-focus focus-visible:outline-none"></label>
+
+        <!-- Поле-ловушка для роботов: людям оно не видно и в порядок табуляции не входит -->
+        <div class="absolute -left-[9999px] h-px w-px overflow-hidden" aria-hidden="true">
+          <label>Ваш сайт, не заполняйте <input id="website" type="text" tabindex="-1" autocomplete="off"></label>
+        </div>
+
+        <p id="problem" role="alert" class="m-0 rounded-ctl bg-bad-bg px-4 py-3 font-semibold text-bad" hidden></p>
+        <button type="submit" id="send" class="min-h-[52px] rounded-ctl bg-brand px-6 font-bold text-white shadow-cta tx-btn hover:bg-brand-hover disabled:cursor-progress disabled:opacity-60">Отправить</button>
+        <p class="m-0 text-[.85rem] text-ink-3">Контакт указывать не обязательно. Мы не сохраняем ваш адрес и данные устройства. Обращение хранится не дольше 180 дней (обработанное — 90) и нужно только для ответа и исправления афиши.</p>
+      </form>
+
+      <div id="done" class="grid gap-3" role="status" hidden>
+        <h2 class="m-0 text-[1.3rem] font-extrabold">Спасибо!</h2>
+        <p id="done-text" class="m-0 text-ink-2"></p>
+        <div><a href="/" class="inline-flex min-h-[50px] items-center justify-center rounded-ctl bg-brand px-6 font-bold text-white no-underline shadow-cta tx-btn hover:bg-brand-hover">Вернуться к афише</a></div>
+      </div>
+    </article>
+    <p class="mx-auto mt-6 max-w-[780px] text-center text-[.85rem] text-ink-3">Неофициальный сервис: не является сервисом Министерства культуры Республики Башкортостан и не связан с ним. Данные собраны из открытых источников, перед визитом уточняйте их у организатора.</p>
+  </main>
+  <script src="/static/feedback.js"></script>
+</body>
+</html>

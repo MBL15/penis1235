@@ -11,6 +11,8 @@ load_dotenv(BASE_DIR / ".env")
 API_VERSION = "1.1.0"  # версия контракта API; в адресе — /api/v1, мажорная версия меняется только при несовместимых изменениях
 DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{(BASE_DIR / 'afisha.db').as_posix()}"
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
+# Личные ключи модераторов: «имя1:ключ1,имя2:ключ2». В журнале изменений действие записывается на имя владельца ключа.
+ADMIN_USERS = os.getenv("ADMIN_USERS", "")
 # Короткий ключ подбирается перебором: приём данных включается только с ключом не короче этой длины.
 ADMIN_KEY_MIN_LENGTH = 24
 PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8000").rstrip("/")

@@ -183,6 +183,75 @@ class StatusPatch(BaseModel):
     status: StatusName
 
 
+class EventPatch(BaseModel):
+    """Правка карточки модератором: меняются только переданные поля. null очищает необязательное поле (цену, конец)."""
+
+    model_config = {"extra": "forbid"}
+
+    title: str | None = Field(None, min_length=2, max_length=300)
+    description: str | None = Field(None, max_length=20_000)
+    category: str | None = Field(None, max_length=64)
+    city: str | None = Field(None, max_length=64)
+    venue: str | None = Field(None, max_length=200)
+    address: str | None = Field(None, max_length=300)
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    series_until: datetime | None = None
+    price_min: int | None = Field(None, ge=0, le=MAX_PRICE)
+    price_max: int | None = Field(None, ge=0, le=MAX_PRICE)
+    age_limit: int | str | None = None
+    kids_friendly: bool | None = None
+    url: str | None = Field(None, max_length=500)
+    image_url: str | None = Field(None, max_length=500)
+
+    @field_validator("url", "image_url")
+    @classmethod
+    def _safe_url(cls, value: str | None) -> str | None:
+        return _http_url(value) if value is not None else None
+
+    @field_validator("age_limit")
+    @classmethod
+    def _age(cls, value: int | str | None) -> int | str | None:
+        if isinstance(value, str) and len(value) > 16:
+            raise ValueError("возрастное ограничение: не больше 16 символов")
+        if isinstance(value, int) and not 0 <= value <= 99:
+            raise ValueError("возрастное ограничение: от 0 до 99")
+        return value
+
+    @field_validator("start_at", "end_at", "series_until")
+    @classmethod
+    def _to_local_naive(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is not None:
+            return value.astimezone(LOCAL_TZ).replace(tzinfo=None)
+        return value
+
+
+class PublicationPatch(BaseModel):
+    publication: PublicationName
+
+
+class AuditEntryOut(BaseModel):
+    id: int
+    at: datetime
+    actor: str = Field(description="Кто изменил: admin, имя модератора, sync:источник, import:файл")
+    action: str = Field(description="create | update | merge | status | publication | edit | delete")
+    event_id: int | None = None
+    changes: dict = Field(default_factory=dict, description="{поле: [было, стало]}")
+    request_id: str = ""
+
+
+class ImportIn(BaseModel):
+    """Файл с событиями (JSON или CSV), прочитанный браузером: так загрузка работает без multipart."""
+
+    filename: str = Field(min_length=3, max_length=200, description="Имя файла: по расширению .json или .csv выбирается разбор")
+    content: str = Field(max_length=5_000_000, description="Текст файла")
+    publish: bool = Field(True, description="false: новые события сохраняются черновиками для модерации")
+
+
+class AdminSessionOut(BaseModel):
+    actor: str
+
+
 class ErrorBody(BaseModel):
     code: str = Field(description="Машинный код: not_found, validation_error, unauthorized, rate_limited, …")
     message: str = Field(description="Сообщение для человека, по-русски")

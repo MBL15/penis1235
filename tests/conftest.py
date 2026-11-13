@@ -44,7 +44,9 @@ def client(session):
         yield session
 
     app.dependency_overrides[get_session] = override
-    for limiter in (ask_limiter, api_limiter, auth_limiter):
+    from app.feedback import feedback_global_limiter, feedback_limiter
+
+    for limiter in (ask_limiter, api_limiter, auth_limiter, feedback_limiter, feedback_global_limiter):
         limiter.hits.clear()
     llm_budget.reset()
     yield TestClient(app)
