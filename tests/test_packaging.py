@@ -2,6 +2,7 @@
 реальный, корректный и грузится повторно без дублей."""
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 
 from app.ingest import ingest_records
@@ -31,6 +32,22 @@ def test_secrets_and_databases_stay_out_of_the_image():
     assert {".env", "*.db", ".git"} <= set(ignored)
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8").split()
     assert {".env", "afisha.db"} <= set(gitignore) and "!.env.example" in gitignore
+
+
+def test_no_invented_events_ship_inside_the_application_package():
+    """ТЗ §13: выдуманных мероприятий быть не должно. Генератор демо-данных живёт в tests/ и в образ не попадает."""
+    assert not (ROOT / "app" / "seed.py").exists()
+    offenders = [p.name for p in (ROOT / "app").rglob("*.py") if "demo-afisha" in p.read_text(encoding="utf-8")]
+    assert not offenders, offenders
+
+
+def test_reset_demo_removes_only_demo_events(session, add):
+    from app.maintenance import reset_demo
+
+    add("Выдуманное", datetime(2026, 11, 10, 18, 0), source="demo-afisha")
+    add("Настоящее", datetime(2026, 11, 10, 19, 0), source="culture.ru")
+    assert reset_demo(session) == 1
+    assert [e.title for e in session.query(Event)] == ["Настоящее"]
 
 
 def test_sample_data_is_valid_real_and_loads_without_duplicates(session):

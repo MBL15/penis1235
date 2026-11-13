@@ -1,21 +1,21 @@
-"""Демонстрационные данные для презентации: python -m app.seed [--reset].
+"""Тестовые данные для автотестов и локальной разработки. В образ приложения не попадают.
+
+Сервис не должен показывать выдуманные события, поэтому набор лежит в tests/, а не в app/.
+Загрузить его в локальную базу при необходимости: python -m tests.demo_data [--reset] (из корня проекта).
 
 Все события выдуманные и помечены источниками «demo-*»: интерфейс показывает плашку «демо-данные».
 Часть событий намеренно приходит из двух «источников» с разными формулировками, чтобы показать дедупликацию.
 Даты считаются от сегодняшнего дня, поэтому на ближайшие выходные событий всегда достаточно.
-Реальные данные подключаются через python -m app.ingest или POST /api/events.
+Реальные данные подключаются через python -m app.ingest, python -m app.sync или POST /api/events.
 """
 import argparse
 import sys
 import zlib
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import select
-
-from .config import now_local
-from .ingest import upsert_event
-from .models import Event
-from .schemas import EventIn
+from app.config import now_local
+from app.ingest import upsert_event
+from app.schemas import EventIn
 
 OPERA = "Башкирский государственный театр оперы и балета"
 DRAMA = "Башкирский академический театр драмы им. М. Гафури"
@@ -136,24 +136,13 @@ def seed(session, today: date | None = None) -> dict[str, int]:
     return stats
 
 
-def reset_demo(session) -> int:
-    """Удаляет только демо-события (все источники начинаются с «demo»); реальные данные не трогает."""
-    removed = 0
-    for event in session.scalars(select(Event)):
-        sources = event.sources or []
-        if sources and all(str(s.get("name", "")).startswith("demo") for s in sources):
-            session.delete(event)
-            removed += 1
-    session.commit()
-    return removed
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Загрузить демо-данные для презентации")
     parser.add_argument("--reset", action="store_true", help="сначала удалить прежние демо-события")
     args = parser.parse_args(argv)
 
-    from .db import SessionLocal, init_db
+    from app.db import SessionLocal, init_db
+    from app.maintenance import reset_demo
 
     init_db()
     with SessionLocal() as session:

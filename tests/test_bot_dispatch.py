@@ -10,7 +10,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
 
 from app import bot, config
-from app.seed import seed
+from .demo_data import seed
 
 from .test_formatting_and_bot import _Ctx
 

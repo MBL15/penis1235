@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.dry_run:
         from .db import SessionLocal, init_db
-        from .seed import reset_demo
+        from .maintenance import reset_demo
 
         init_db()
     failed = 0

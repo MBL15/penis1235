@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from app.config import now_local
-from app.seed import seed
+from .demo_data import seed
 
 
 def payload(**kw):

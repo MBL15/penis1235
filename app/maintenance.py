@@ -2,6 +2,8 @@
 
   python -m app.maintenance series            # показать события, записанные как «длинный период», хотя это серии показов
   python -m app.maintenance series --apply    # исправить их (делайте копию базы перед этим)
+  python -m app.maintenance demo-reset        # показать выдуманные демо-события (источники «demo-*»), если они попали в базу
+  python -m app.maintenance demo-reset --apply  # удалить их; реальные события не трогаются
 """
 import argparse
 import sys
@@ -40,9 +42,21 @@ def fix_series(session: Session, *, apply: bool = False) -> list[Event]:
     return events
 
 
+def reset_demo(session: Session) -> int:
+    """Удаляет только демо-события (все источники начинаются с «demo»); реальные данные не трогает."""
+    removed = 0
+    for event in session.scalars(select(Event)):
+        sources = event.sources or []
+        if sources and all(str(s.get("name", "")).startswith("demo") for s in sources):
+            session.delete(event)
+            removed += 1
+    session.commit()
+    return removed
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Служебные операции с базой")
-    parser.add_argument("task", choices=["series"])
+    parser.add_argument("task", choices=["series", "demo-reset"])
     parser.add_argument("--apply", action="store_true", help="записать изменения (без флага только показывает)")
     args = parser.parse_args(argv)
     try:
@@ -51,8 +65,17 @@ def main(argv: list[str] | None = None) -> int:
         pass
 
     from .db import SessionLocal, init_db
+    from .formatting import is_demo
 
     init_db()
+    if args.task == "demo-reset":
+        with SessionLocal() as session:
+            if not args.apply:
+                print(f"Демо-событий в базе: {sum(1 for e in session.scalars(select(Event)) if is_demo(e))} "
+                      "(запустите с --apply, чтобы удалить)")
+            else:
+                print(f"Удалено демо-событий: {reset_demo(session)}")
+        return 0
     with SessionLocal() as session:
         events = fix_series(session, apply=args.apply)
     for event in events[:20]:

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from app import bot
 from app.formatting import price_text, render_event, when_text
-from app.seed import seed
+from .demo_data import seed
 
 
 def ev(**kw):

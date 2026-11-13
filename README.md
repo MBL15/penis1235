@@ -53,7 +53,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
 copy .env.example .env                       # при желании впишите ключи
-.\.venv\Scripts\python.exe -m app.seed       # демо-данные (выдуманные, помечены «demo»)
+.\.venv\Scripts\python.exe -m app.ingest data\sample_events.json   # 120 реальных событий для первого запуска
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
 ```
 
@@ -224,10 +224,14 @@ curl -X POST http://localhost:8000/api/events -H "X-API-Key: <ключ>" -H "Con
 `url`, `image_url`, `status`. Любой новый источник (сайт театра, музея) пишется как адаптер, который собирает записи в этом формате
 (образец: `app/sources/culture_ru.py`), остальное (нормализация, дедупликация, статусы) уже сделано.
 
-## Демо-данные
+## Тестовые данные
 
-`python -m app.seed` создаёт выдуманные события, даты считаются от сегодняшнего дня. Источники помечены `demo-*`, а интерфейс,
-бот и виджет помечают такие события значком «демо». `python -m app.seed --reset` удаляет только демо-события, реальные не трогает.
+Сервис не показывает выдуманных событий: первый запуск использует `data/sample_events.json` (реальные афиши, источник записан у
+каждой записи; пересоздать выгрузку из своей базы: `python scripts/export_sample.py`).
+
+Выдуманные события нужны только автотестам и лежат в `tests/demo_data.py`, в образ они не попадают. Если такие события всё же
+попали в локальную базу (`python -m tests.demo_data`), интерфейс, бот и виджет помечают их значком «демо», а
+`python -m app.maintenance demo-reset --apply` удаляет только их, реальные не трогает.
 
 ## Виджет
 
