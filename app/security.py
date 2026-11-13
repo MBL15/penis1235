@@ -132,8 +132,8 @@ llm_budget = LlmBudget()
 CSP_PAGE = "; ".join((
     "default-src 'self'",
     "script-src 'self' https://telegram.org",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     "img-src 'self' data: https:",
     "connect-src 'self'",
     "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org",

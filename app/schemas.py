@@ -144,6 +144,18 @@ class EventOut(BaseModel):
     confidence: float | None = Field(None, description="уверенность 0–1: ссылка, дата, полнота, число источников")
 
 
+class SubscriptionIn(BaseModel):
+    city: str = Field("", max_length=64, description="город из справочника; пусто — вся республика")
+    category: str = Field("", max_length=32, description="категория из справочника; пусто — любая")
+
+
+class SubscriptionOut(BaseModel):
+    id: int
+    city: str
+    category: str
+    label: str = Field(description="человекочитаемо: «Уфа · Концерты»")
+
+
 class EventList(BaseModel):
     items: list[EventOut]
     hint: str | None = Field(None, description="при пустой выдаче: что искали и какое условие можно ослабить")

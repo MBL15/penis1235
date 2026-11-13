@@ -316,6 +316,7 @@
       $('#more').hidden = state.offset >= data.total;
       $('#more').textContent = `Показать ещё ${Math.min(PAGE, data.total - state.offset)}`;
       updateCta(data.total);
+      renderSubscribeBox();
     } catch (error) {
       if (seq !== loadSeq) return;
       results.innerHTML = `<div class="${EMPTY}"><p class="m-0 text-[1.05rem]">Не удалось загрузить афишу: ${esc(error.message)}</p>
@@ -388,6 +389,25 @@
       const link = e.target.closest('a[href^="http"]');
       if (link && !link.href.startsWith(location.origin)) { e.preventDefault(); tg.openLink(link.href); }
     });
+  }
+  // ---------- подписка на новые события ----------
+  /** В Telegram: кнопка создаёт подписку через API (подпись Mini App доказывает, чей это чат). В браузере: подсказка про бота. */
+  function renderSubscribeBox() {
+    const box = $('#sub-box');
+    if (!box) return;
+    const city = $('#f-city').value;
+    const category = state.categories.length === 1 ? state.categories[0] : '';
+    box.hidden = false;
+    if (!tg) { box.textContent = 'Подписка на новые события оформляется в Telegram-боте: команда /subscribe.'; return; }
+    const label = [city || 'вся республика', category ? (categories[category] || category) : 'любая категория'].join(' · ');
+    box.innerHTML = `<button type="button" class="${CHIP}" id="sub-go">🔔 Подписаться: ${esc(label)}</button> <span id="sub-msg"></span>`;
+    $('#sub-go').onclick = async () => {
+      const msg = $('#sub-msg');
+      try {
+        await api('/api/v1/subscriptions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tg.initData }, body: JSON.stringify({ city, category }) });
+        msg.textContent = 'Готово: пришлём новые события не чаще раза в сутки. Отписка: /unsubscribe в боте.';
+      } catch (err) { msg.textContent = err.message; }
+    };
   }
   let lastTotal = null;
   function updateMainButton(total = lastTotal) {

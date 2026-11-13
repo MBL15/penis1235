@@ -5,7 +5,8 @@
  *   <script src="https://ВАШ-СЕРВЕР/widget.js" data-target="#afisha" data-city="Уфа" data-limit="5"></script>
  *
  * Атрибуты (все необязательные): data-target, data-title, data-limit, data-city, data-category,
- * data-when (today|tomorrow|weekend|week), data-free="true", data-kids="true", data-disclaimer (свой текст пометки
+ * data-when (today|tomorrow|weekend|week), data-free="true", data-kids="true", data-height (высота блока: «400» или «60vh»;
+ * длинный список прокручивается внутри), data-disclaimer (свой текст пометки
  * «неофициальный сервис»; пометка в виджете есть всегда).
  * Виджет рисуется в Shadow DOM, поэтому стили сайта ему не мешают, а он не ломает стили сайта.
  */
@@ -40,6 +41,13 @@
     '.e{opacity:.75}';
   root.innerHTML = '<style>' + css + '</style><div class="w"><h2></h2><div class="body e">Загрузка афиши…</div></div>';
   root.querySelector('h2').textContent = cfg.title || 'Афиша событий';
+  // Высота: только число (пиксели) или число с px, vh, em, rem; другое значение игнорируется, чтобы атрибутом нельзя было вставить стиль
+  var heightMatch = /^(\d{2,4})(px|vh|em|rem)?$/.exec(String(cfg.height || '').trim());
+  if (heightMatch) {
+    var box = root.querySelector('.w');
+    box.style.maxHeight = heightMatch[1] + (heightMatch[2] || 'px');
+    box.style.overflowY = 'auto';
+  }
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {

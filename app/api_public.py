@@ -28,7 +28,7 @@ from .deps import SessionDep
 from .formatting import event_to_out
 from .http_cache import cached_json
 from .models import Event
-from .normalize import CATEGORIES, STATUSES, canonical_category, norm_text
+from .normalize import CATEGORIES, STATUSES, canonical_category, canonical_city, norm_text
 from .observability import metrics
 from .pipeline import process_batch, process_record
 from .schemas import (
@@ -45,13 +45,17 @@ from .schemas import (
     IngestResult,
     RejectedRecord,
     StatusPatch,
+    SubscriptionIn,
+    SubscriptionOut,
     TraceOut,
     VenueOut,
 )
 from .tracing import get_trace
 from .hints import empty_hint
 from .search import WHEN_VALUES, SearchFilters, facets, get_event, resolve_when, search, venues
-from .security import ask_limiter
+from .security import RateLimiter, ask_limiter
+from .telegram_auth import validate_init_data
+from . import subscriptions
 
 router = APIRouter(responses={
     401: {"model": ErrorOut, "description": "Нет или неверен ключ X-API-Key"},
@@ -231,6 +235,67 @@ def patch_status(event_id: Annotated[int, Path(ge=1, le=2**31 - 1)], payload: St
     audit.record(session, actor, "status", event.id, audit.diff(before, audit.snapshot(event)))
     session.commit()
     return event_to_out(event)
+
+
+# ---------- подписки (ТЗ §6.3) ----------
+
+def telegram_chat(request: Request) -> int:
+    """Чей это чат: из подписи Mini App в заголовке X-Telegram-Init-Data. Номер чата на веру не принимается."""
+    if not config.TELEGRAM_BOT_TOKEN:
+        raise HTTPException(503, "Подписки через API работают из мини-приложения Telegram; на этом сервере они не настроены. "
+                                 "Оформите подписку в боте: /subscribe")
+    chat_id = validate_init_data(request.headers.get("x-telegram-init-data", ""), config.TELEGRAM_BOT_TOKEN)
+    if chat_id is None:
+        raise HTTPException(401, "Нужна подпись Telegram: откройте афишу из бота (заголовок X-Telegram-Init-Data)")
+    return chat_id
+
+
+ChatDep = Annotated[int, Depends(telegram_chat)]
+subscription_limiter = RateLimiter(limit=30, detail="Слишком много действий с подписками, попробуйте через минуту")
+
+
+def _sub_out(sub) -> SubscriptionOut:
+    return SubscriptionOut(id=sub.id, city=sub.city, category=sub.category, label=subscriptions.describe(sub))
+
+
+@router.get("/subscriptions", response_model=list[SubscriptionOut], tags=["Подписки"], summary="Мои подписки",
+            dependencies=[Depends(subscription_limiter)], responses={401: {"model": ErrorOut}, 503: {"model": ErrorOut}})
+def list_subscriptions(chat_id: ChatDep, session: SessionDep) -> list[SubscriptionOut]:
+    """Подписки того чата, который подписал запрос. Чужие подписки увидеть нельзя. Хранятся номер чата и фильтры, срок 12 месяцев."""
+    return [_sub_out(s) for s in subscriptions.list_for(session, chat_id)]
+
+
+@router.post("/subscriptions", response_model=SubscriptionOut, status_code=201, tags=["Подписки"], summary="Подписаться на город и категорию",
+             dependencies=[Depends(subscription_limiter)], responses={401: {"model": ErrorOut}, 409: {"model": ErrorOut}, 422: {"model": ErrorOut}})
+def create_subscription(payload: SubscriptionIn, chat_id: ChatDep, session: SessionDep) -> SubscriptionOut:
+    """Уведомления о новых событиях приходят в Telegram не чаще раза в сутки, с 9 до 21 часа."""
+    city = canonical_city(payload.city) if payload.city else ""
+    if payload.city and (not city or city not in {c["name"] for c in facets(session)["cities"]}):
+        raise HTTPException(422, f"Такого города нет в афише: «{payload.city[:40]}». Список: GET /api/v1/cities")
+    category = canonical_category(payload.category) if payload.category else ""
+    if payload.category and category == "other" and norm_text(payload.category) not in ("other", "другое"):
+        raise HTTPException(422, f"Неизвестная категория: {payload.category[:40]}. Допустимые: {', '.join(CATEGORIES)}")
+    outcome = subscriptions.add(session, chat_id, city, category)
+    if outcome == "limit":
+        raise HTTPException(409, f"Уже {subscriptions.MAX_PER_CHAT} подписок: удалите ненужную")
+    if outcome == "exists":
+        raise HTTPException(409, "Такая подписка уже есть")
+    sub = next(s for s in subscriptions.list_for(session, chat_id) if s.city == city and s.category == category)
+    return _sub_out(sub)
+
+
+@router.delete("/subscriptions/{sub_id}", status_code=204, tags=["Подписки"], summary="Отписаться от одной подписки",
+               dependencies=[Depends(subscription_limiter)], responses={401: {"model": ErrorOut}, 404: {"model": ErrorOut}})
+def delete_subscription(sub_id: Annotated[int, Path(ge=1, le=2**31 - 1)], chat_id: ChatDep, session: SessionDep) -> Response:
+    if not subscriptions.remove(session, chat_id, sub_id):
+        raise HTTPException(404, "Подписка не найдена")
+    return Response(status_code=204)
+
+
+@router.delete("/subscriptions", tags=["Подписки"], summary="Отписаться от всего одним вызовом",
+               dependencies=[Depends(subscription_limiter)], responses={401: {"model": ErrorOut}})
+def delete_all_subscriptions(chat_id: ChatDep, session: SessionDep) -> dict:
+    return {"removed": subscriptions.remove_all(session, chat_id)}
 
 
 # ---------- обратная связь ----------
