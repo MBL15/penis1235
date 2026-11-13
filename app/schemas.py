@@ -291,6 +291,9 @@ class ChatTurn(BaseModel):
 class AskIn(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=20)
+    context_event_ids: list[int] = Field(
+        default_factory=list, max_length=10,
+        description="Номера событий из прошлого ответа: нужны для уточнений «а ещё», «в другой день», «что-нибудь похожее»")
 
 
 class AskOut(BaseModel):
@@ -300,3 +303,45 @@ class AskOut(BaseModel):
     mode: Literal["llm", "rules"]
     provider: str = Field("", description="Какая модель отвечала: gemini; пусто в режиме правил")
     filters: dict = Field(default_factory=dict)
+    trace_id: str = Field("", description="Ссылка на трассу ответа: GET /api/v1/traces/{trace_id} и страница /trace/{trace_id}")
+    pending_actions: list["PendingActionOut"] = Field(
+        default_factory=list, description="Предложенные действия (подписка, обращение): выполняются только после подтверждения")
+
+
+class PendingActionOut(BaseModel):
+    id: str
+    kind: str = Field(description="subscribe | move_subscription | feedback")
+    summary: str = Field(description="Что будет сделано; текст пишет сервер")
+    expires_at: str
+
+
+class ActionResult(BaseModel):
+    ok: bool
+    message: str
+
+
+class TraceOut(BaseModel):
+    """Трасса ответа агента: по ней можно проверить, откуда взялся каждый факт (ТЗ §7.4)."""
+
+    id: str
+    created_at: datetime
+    mode: str = Field(description="llm — отвечала модель, rules — режим правил")
+    provider: str = ""
+    model: str = ""
+    prompt_version: str = ""
+    query: str
+    history_turns: int = 0
+    plan: dict = Field(default_factory=dict, description="Как поняли запрос: условия поиска, поправки, неучтённое")
+    steps: list[dict] = Field(default_factory=list, description="Вызовы инструментов: tool, args, ok, event_ids, total, ms")
+    event_ids: list[int] = Field(default_factory=list, description="События, показанные в ответе (основания)")
+    events: list[dict] = Field(default_factory=list, description="Те же события: id и название")
+    reply: str = ""
+    needs_clarification: bool = False
+    flags: dict = Field(default_factory=dict, description="injection, offtopic, fallback_reason, ungrounded_numbers, …")
+    latency_ms: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_rub: float | None = Field(None, description="null: тариф не задан в настройках")
+    cost_note: str = ""
+
+AskOut.model_rebuild()

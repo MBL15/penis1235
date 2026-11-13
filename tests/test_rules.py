@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time
 
 from app.rules import parse_conversation, parse_query
 
@@ -96,17 +96,58 @@ def test_city_typos_are_fixed_and_reported_but_months_are_not_cities():
 def test_conditions_we_cannot_check_are_listed():
     text = "Куда пойти в субботу с ребёнком 8 лет в Стерлитамаке, до 1000 рублей на двоих, чтобы закончилось не позже 20:00 и ехать не больше 20 минут?"
     parsed = parse_query(text, SATURDAY)
-    assert parsed.unsupported == ["время («не позже 20:00»)", "расстояние и дорога («ехать не больше 20 минут»)"]
-    assert parsed.filters.city == "Стерлитамак" and parsed.filters.age == 8 and parsed.filters.kids
+    assert parsed.unsupported == ["расстояние и дорога («ехать не больше 20 минут»)"]  # время окончания теперь фильтр
+    f = parsed.filters
+    assert f.city == "Стерлитамак" and f.age == 8 and f.kids and f.ends_by == time(20, 0) and f.price_max == 500
+    assert f.max_duration is None  # «не больше 20 минут» про дорогу, а не про длительность события
 
 
-def test_other_unsupported_conditions():
-    assert parse_query("что посмотреть сегодня вечером", SATURDAY).unsupported == ["время («вечером»)"]
-    assert parse_query("концерт в пятницу после 19:00", SATURDAY).unsupported == ["время («после 19:00»)"]
-    assert parse_query("с ребёнком, не дольше двух часов", SATURDAY).unsupported == ["длительность («не дольше двух часов»)"]
-    assert parse_query("мероприятия на башкирском языке", SATURDAY).unsupported == ["язык мероприятия («на башкирском языке»)"]
+def test_time_duration_and_language_are_real_filters_now():
+    f = parse_query("что посмотреть сегодня вечером", SATURDAY).filters
+    assert (f.time_from, f.time_to) == (time(17, 0), None)
+    assert parse_query("концерт в пятницу после 19:00", SATURDAY).filters.time_from == time(19, 0)
+    assert parse_query("что-нибудь утром", SATURDAY).filters.time_to == time(12, 0)
+    f = parse_query("сходить днём", SATURDAY).filters
+    assert (f.time_from, f.time_to) == (time(12, 0), time(17, 0))
+    f = parse_query("спектакль в 19:00", SATURDAY).filters
+    assert (f.time_from, f.time_to) == (time(18, 30), time(19, 30))  # «в 19:00» — начало в пределах получаса
+    assert parse_query("спектакль, закончится не позже 22:00", SATURDAY).filters.ends_by == time(22, 0)
+    assert parse_query("спектакль до 18:00", SATURDAY).filters.time_to == time(18, 0)
+    assert parse_query("с ребёнком, не дольше двух часов", SATURDAY).filters.max_duration == 120
+    assert parse_query("не дольше 90 минут", SATURDAY).filters.max_duration == 90
+    assert parse_query("до получаса", SATURDAY).filters.max_duration == 30
+    assert parse_query("мероприятия на башкирском языке", SATURDAY).filters.language == "ba"
+    assert parse_query("лекция на татарском", SATURDAY).filters.language == "tt"
+    for text in ("концерты в Уфе в субботу до 1500 рублей", "что посмотреть сегодня вечером", "не дольше двух часов"):
+        assert parse_query(text, SATURDAY).unsupported == [], text
+
+
+def test_distance_is_still_unsupported_and_is_not_mistaken_for_duration_or_price():
     assert parse_query("а есть что-то ближе к центру?", SATURDAY).unsupported == ["расстояние и дорога («ближе к центру»)"]
-    assert parse_query("концерты в Уфе в субботу до 1500 рублей", SATURDAY).unsupported == []  # обычные условия не трогаем
+    f = parse_query("ехать не больше 20 минут, до 2 часов", SATURDAY).filters
+    assert f.max_duration == 120 and f.price_max is None
+    assert parse_query("до 2 часов", SATURDAY).filters.price_max is None  # длительность, а не цена в 2 рубля
+    assert parse_query("до 1500 рублей после 19:00", SATURDAY).filters.price_max == 1500
+
+
+def test_new_time_replaces_the_old_one_in_a_conversation():
+    f = parse_conversation(["что-нибудь вечером", "лучше утром"], SATURDAY).filters
+    assert (f.time_from, f.time_to) == (None, time(12, 0))
+    f = parse_conversation(["концерты", "после 19:00"], SATURDAY).filters
+    assert f.category == "concert" and f.time_from == time(19, 0)
+
+
+def test_follow_ups_use_the_events_shown_before():
+    shown = [11, 12]
+    more = parse_conversation(["концерты в Уфе", "а что ещё есть?"], SATURDAY, shown)
+    assert more.filters.exclude_ids == shown and more.refinements == ["другие варианты"] and more.filters.category == "concert"
+    other_day = parse_conversation(["концерты в Уфе в субботу", "а в другой день?"], SATURDAY, shown)
+    assert other_day.filters.date_from is None and other_day.filters.exclude_ids == shown and other_day.filters.category == "concert"
+    similar = parse_conversation(["концерты в Уфе", "а есть что-то похожее?"], SATURDAY, shown)
+    assert similar.similar_to == 11 and similar.recognized
+    cheaper = parse_conversation(["концерты в Уфе", "подешевле"], SATURDAY, shown)
+    assert cheaper.filters.sort == "price" and cheaper.filters.exclude_ids == shown
+    assert parse_conversation(["концерты в Уфе", "а что ещё?"], SATURDAY).filters.exclude_ids == []  # без прошлого ответа не к чему «ещё»
 
 
 def test_clock_time_is_not_a_price():

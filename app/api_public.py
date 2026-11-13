@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 
 from . import audit, config
+from . import agent_actions
 from .agent import ask as agent_ask
 from .auth import require_admin
 from .config import now_local
@@ -31,6 +32,7 @@ from .normalize import CATEGORIES, STATUSES, canonical_category, norm_text
 from .observability import metrics
 from .pipeline import process_batch, process_record
 from .schemas import (
+    ActionResult,
     AskIn,
     AskOut,
     BulkIngestResult,
@@ -43,8 +45,10 @@ from .schemas import (
     IngestResult,
     RejectedRecord,
     StatusPatch,
+    TraceOut,
     VenueOut,
 )
+from .tracing import get_trace
 from .search import WHEN_VALUES, SearchFilters, facets, get_event, resolve_when, search, venues
 from .security import ask_limiter
 
@@ -270,8 +274,11 @@ def send_feedback(payload: FeedbackIn, session: SessionDep) -> FeedbackAccepted:
              summary="Вопрос обычным языком → подборка событий")
 def ask(payload: AskIn, session: SessionDep) -> AskOut:
     history = [turn.model_dump() for turn in payload.history]
-    result = agent_ask(session, payload.message, history)
+    result = agent_ask(session, payload.message, history, context_event_ids=payload.context_event_ids)
     metrics.inc("afisha_ask_total", mode=result.mode, provider=result.provider or "none")
+    for flag in ("injection", "offtopic"):
+        if flag in _trace_flags(session, result.trace_id):
+            metrics.inc("afisha_agent_blocked_total", reason=flag)
     now = now_local()
     return AskOut(
         reply=result.reply,
@@ -280,4 +287,51 @@ def ask(payload: AskIn, session: SessionDep) -> AskOut:
         mode=result.mode,
         provider=result.provider,
         filters=result.filters,
+        trace_id=result.trace_id,
+        pending_actions=result.pending_actions,
     )
+
+
+def _trace_flags(session, trace_id: str) -> dict:
+    trace = get_trace(session, trace_id)
+    return (trace.flags or {}) if trace is not None else {}
+
+
+def trace_out(session, trace) -> TraceOut:
+    """Трасса для API и страницы: события-основания с названиями, стоимость с пометкой, если тариф не задан."""
+    titles = {e.id: e.title for e in session.scalars(select(Event).where(Event.id.in_(trace.event_ids or [])))} if trace.event_ids else {}
+    note = ""
+    if trace.mode == "llm" and trace.cost_rub is None:
+        note = "Тариф модели не задан (LLM_PRICE_INPUT_RUB_PER_M, LLM_PRICE_OUTPUT_RUB_PER_M): стоимость не посчитана, токены учтены."
+    return TraceOut(
+        id=trace.id, created_at=trace.created_at, mode=trace.mode, provider=trace.provider, model=trace.model,
+        prompt_version=trace.prompt_version, query=trace.query, history_turns=trace.history_turns, plan=trace.plan or {},
+        steps=trace.steps or [], event_ids=trace.event_ids or [], events=[{"id": i, "title": titles.get(i, "")} for i in trace.event_ids or []],
+        reply=trace.reply, needs_clarification=trace.needs_clarification, flags=trace.flags or {}, latency_ms=trace.latency_ms,
+        input_tokens=trace.input_tokens, output_tokens=trace.output_tokens, cost_rub=trace.cost_rub, cost_note=note,
+    )
+
+
+@router.get("/traces/{trace_id}", response_model=TraceOut, tags=["ИИ-поиск"], summary="Трасса ответа агента",
+            description="По ссылке из ответа `/ask`: запрос, как он понят, какие инструменты вызваны с какими аргументами, на каких "
+                        "событиях основан ответ, задержка, токены и стоимость. Идентификатор случайный: это и есть ссылка. Хранится 30 дней.")
+def read_trace(trace_id: Annotated[str, Path(min_length=32, max_length=32, pattern="^[0-9a-f]{32}$")], session: SessionDep) -> TraceOut:
+    trace = get_trace(session, trace_id)
+    if trace is None:
+        raise HTTPException(404, "Трасса не найдена или уже удалена (хранится 30 дней)")
+    return trace_out(session, trace)
+
+
+@router.post("/agent/actions/{action_id}/confirm", response_model=ActionResult, tags=["ИИ-поиск"], dependencies=[Depends(ask_limiter)],
+             summary="Подтвердить действие, которое предложил агент")
+def confirm_action(action_id: Annotated[str, Path(min_length=32, max_length=32, pattern="^[0-9a-f]{32}$")], session: SessionDep) -> ActionResult:
+    """Действие выполняется только здесь, по явному подтверждению человека. Подписки привязаны к чату Telegram и подтверждаются в боте."""
+    ok, message = agent_actions.confirm(session, action_id)
+    return ActionResult(ok=ok, message=message)
+
+
+@router.post("/agent/actions/{action_id}/cancel", response_model=ActionResult, tags=["ИИ-поиск"], dependencies=[Depends(ask_limiter)],
+             summary="Отказаться от предложенного агентом действия")
+def cancel_action(action_id: Annotated[str, Path(min_length=32, max_length=32, pattern="^[0-9a-f]{32}$")], session: SessionDep) -> ActionResult:
+    done = agent_actions.cancel(session, action_id)
+    return ActionResult(ok=done, message="Действие отменено." if done else "Такого действия нет, оно уже обработано или его нельзя отменить здесь.")

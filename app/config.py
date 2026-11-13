@@ -61,6 +61,18 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 # Если задан, /metrics требует заголовок Authorization: Bearer <токен>. Без него метрики открыты: закройте их на прокси.
 METRICS_TOKEN = os.getenv("METRICS_TOKEN", "")
 
+def _float_env(name: str) -> float | None:
+    try:
+        return float(os.getenv(name, "")) if os.getenv(name, "").strip() else None
+    except ValueError:
+        return None
+
+
+# Тарифы модели для расчёта стоимости диалога, рублей за 1 миллион токенов (ТЗ §9.2 №9). Не заданы: стоимость в трассах
+# и отчётах не считается («тариф не задан»), число токенов считается всегда. Тариф подставьте из прайса своего провайдера.
+LLM_PRICE_INPUT_RUB_PER_M = _float_env("LLM_PRICE_INPUT_RUB_PER_M")
+LLM_PRICE_OUTPUT_RUB_PER_M = _float_env("LLM_PRICE_OUTPUT_RUB_PER_M")
+
 AGENT_MODE = os.getenv("AGENT_MODE", "auto")  # auto | llm | rules
 # Помощник работает на Google Gemini (ключ из AI Studio); без ключа отвечает режим правил.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", "")

@@ -78,9 +78,10 @@ def test_tool_loop_with_float_numbers_and_hallucinated_id(session, seeded):
     settings = first["config"]
     assert "2026-11-07" in settings.system_instruction and "суббота" in settings.system_instruction
     assert settings.automatic_function_calling.disable is True
-    assert "Описывай только факты" in settings.system_instruction and "развёрнуто" in settings.system_instruction
+    assert "Описывай только факты" in settings.system_instruction and "1–2 предложения" in settings.system_instruction
     assert settings.max_output_tokens >= 4096
-    assert {d.name for d in settings.tools[0].function_declarations} == {"search_events", "get_event"}
+    assert {d.name for d in settings.tools[0].function_declarations} == {
+        "search_events", "get_event", "find_similar", "get_venue_schedule", "subscribe", "save_feedback"}
     answer = second["contents"][-1]
     assert answer.role == "user"
     payload = answer.parts[0].function_response.response["result"]

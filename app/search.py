@@ -1,5 +1,5 @@
 """Поиск и фильтрация событий. Один код обслуживает REST API, бота и ИИ-агента."""
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import and_, case, extract, func, or_, select
@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .config import now_local
 from .formatting import ONGOING_GRACE
 from .models import Event
-from .normalize import ACTIVE_STATUSES, canonical_category, canonical_city, canonical_language, norm_text, stem, tokens
+from .normalize import ACTIVE_STATUSES, canonical_category, canonical_city, canonical_language, norm_text, stem, title_key, tokens
 from .venues import canonical_venue, filter_key
 
 WHEN_VALUES = ("today", "tomorrow", "weekend", "week")
@@ -35,6 +35,7 @@ class SearchFilters:
     ends_by: time | None = None  # закончится не позже: нужна известная длительность, иначе событие не подходит
     max_duration: int | None = None  # длительность не больше, минут (неизвестная не подходит)
     language: str | None = None  # язык мероприятия (ba, ru, tt, en…): только у событий, где он указан
+    exclude_ids: list[int] = field(default_factory=list)  # уже показанные события: для «ещё» и «в другой день»
     include_past: bool = False
     sort: str = "date"  # date | price
     limit: int = 20
@@ -133,6 +134,8 @@ def _conditions(f: SearchFilters, now: datetime) -> list:
         conds.append(and_(Event.duration_min.is_not(None), Event.duration_min <= f.max_duration))
     if f.language:
         conds.append(Event.language == (canonical_language(f.language) or f.language))
+    if f.exclude_ids:
+        conds.append(Event.id.not_in(f.exclude_ids))
 
     if f.age is not None:
         conds.append(Event.age_limit <= f.age)
@@ -170,6 +173,28 @@ def get_event(session: Session, event_id: int, *, include_drafts: bool = False) 
     if event is not None and event.publication == "draft" and not include_drafts:
         return None
     return event
+
+
+def similar(session: Session, event: Event, now: datetime | None = None, *, city: str | None = None, date_from: date | None = None,
+            date_to: date | None = None, limit: int = 5, exclude_ids: list[int] | None = None) -> list[Event]:
+    """Похожие события: та же категория и город (или заданный), без самого события. Чем больше общих слов в названии и чем
+    ближе площадка, тем выше; при равенстве раньше по дате. Ничего не выдумываем: берём только то, что есть в базе."""
+    now = now or now_local()
+    filters = SearchFilters(city=city or event.city, category=event.category if event.category != "other" else None,
+                            date_from=date_from, date_to=date_to, limit=200)
+    conds = _conditions(filters, now) + [Event.id != event.id]
+    if exclude_ids:
+        conds.append(Event.id.not_in(exclude_ids))
+    candidates = list(session.scalars(select(Event).where(*conds).order_by(Event.start_at, Event.id).limit(200)))
+    own_words = set(title_key(event.title).split())
+
+    def score(other: Event) -> int:
+        shared = len(own_words & set(title_key(other.title).split()))
+        return shared * 3 + (2 if event.venue_key and other.venue_key == event.venue_key else 0) + (
+            1 if bool(other.kids_friendly) == bool(event.kids_friendly) else 0)
+
+    ranked = sorted(candidates, key=lambda c: (-score(c), c.start_at, c.id))
+    return ranked[: max(1, min(limit, 20))]
 
 
 def venues(session: Session, now: datetime | None = None, *, city: str | None = None, q: str | None = None,

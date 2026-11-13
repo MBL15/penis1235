@@ -14,7 +14,7 @@ from .api_admin import router as admin_router
 from .api_public import router as public_router
 from .db import init_db
 from .http_cache import cached_html
-from .pages import render_event_page, render_not_found_page
+from .pages import render_event_page, render_not_found_page, render_trace_page
 from .deps import SessionDep
 from .models import Event
 from .observability import metrics, observe, setup_logging
@@ -59,8 +59,13 @@ async def lifespan(_: FastAPI):
     from .db import SessionLocal
     from .feedback import purge_old
 
+    from .agent_actions import purge_actions
+    from .tracing import purge_traces
+
     with SessionLocal() as session:
         purge_old(session)  # срок хранения обращений
+        purge_traces(session)  # трассы ответов агента
+        purge_actions(session)
     if config.ADMIN_API_KEY and len(config.ADMIN_API_KEY) < config.ADMIN_KEY_MIN_LENGTH:
         log.warning("ADMIN_API_KEY короче %d символов: приём данных отключён, задайте длинный случайный ключ",
                     config.ADMIN_KEY_MIN_LENGTH)
@@ -124,6 +129,20 @@ def admin_page() -> FileResponse:
 @app.get("/feedback", include_in_schema=False)
 def feedback_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "feedback.html")
+
+
+@app.get("/trace/{trace_id}", include_in_schema=False)
+def trace_page(request: Request, trace_id: str, session: SessionDep) -> Response:
+    """Как получен ответ агента: запрос, условия, вызовы инструментов, события-основания, токены и стоимость."""
+    from .api_public import trace_out
+    from .tracing import get_trace
+
+    trace = get_trace(session, trace_id)
+    if trace is None:
+        return cached_html(request, render_not_found_page("Трасса не найдена", "Ссылка неверна или трасса удалена: они хранятся 30 дней."),
+                           max_age=0, status_code=404)
+    return Response(content=render_trace_page(trace_out(session, trace)).encode("utf-8"), media_type="text/html; charset=utf-8",
+                    headers={"Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow"})
 
 
 @app.get("/widget.js", include_in_schema=False)

@@ -114,3 +114,47 @@ class AuditLog(Base):
     event_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     changes: Mapped[dict] = mapped_column(JSON, default=dict)
     request_id: Mapped[str] = mapped_column(String(64), default="")
+
+
+class AgentTrace(Base):
+    """Трасса одного ответа агента (ТЗ §7.4): запрос, план, вызовы инструментов с аргументами, события-основания, задержка,
+    токены и стоимость. По ней можно проверить, откуда взялся каждый факт. Идентификатор случайный и служит ссылкой на трассу.
+    Срок хранения: app.tracing.RETENTION_DAYS."""
+
+    __tablename__ = "agent_traces"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local, index=True)
+    request_id: Mapped[str] = mapped_column(String(64), default="")
+    mode: Mapped[str] = mapped_column(String(8), default="rules")  # llm | rules
+    provider: Mapped[str] = mapped_column(String(16), default="")
+    model: Mapped[str] = mapped_column(String(64), default="")
+    prompt_version: Mapped[str] = mapped_column(String(32), default="")
+    query: Mapped[str] = mapped_column(Text, default="")
+    history_turns: Mapped[int] = mapped_column(Integer, default=0)
+    plan: Mapped[dict] = mapped_column(JSON, default=dict)  # как поняли запрос: условия поиска и поправки
+    steps: Mapped[list] = mapped_column(JSON, default=list)  # вызовы инструментов
+    event_ids: Mapped[list] = mapped_column(JSON, default=list)  # показанные события: основания ответа
+    reply: Mapped[str] = mapped_column(Text, default="")
+    needs_clarification: Mapped[bool] = mapped_column(Boolean, default=False)
+    flags: Mapped[dict] = mapped_column(JSON, default=dict)  # injection, offtopic, fallback, ungrounded…
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_rub: Mapped[float | None] = mapped_column(Float, nullable=True)  # None: тариф не задан
+
+
+class PendingAction(Base):
+    """Действие, которое агент предложил выполнить и которое меняет данные: подписка, перенос подписки, обращение (ТЗ §6.5).
+    Выполняется только после явного подтверждения человеком кнопкой; без него по истечении срока просто устаревает."""
+
+    __tablename__ = "agent_actions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    kind: Mapped[str] = mapped_column(String(20))  # subscribe | move_subscription | feedback
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    summary: Mapped[str] = mapped_column(Text, default="")  # что будет сделано, текст пишет сервер, а не модель
+    status: Mapped[str] = mapped_column(String(12), default="pending")  # pending | confirmed | cancelled
+    trace_id: Mapped[str] = mapped_column(String(32), default="")

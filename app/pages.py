@@ -179,10 +179,55 @@ def render_event_page(event: Event, now: datetime | None = None) -> str:
     return _layout(title, summary or event.title, body, path=f"/event/{int(event.id)}", image=event.image_url or "")
 
 
-def render_not_found_page() -> str:
-    body = """    <article class="grid gap-4 rounded-panel border border-stroke bg-glass-hi p-6 text-center shadow-surface">
-      <h1 class="m-0 text-[1.6rem] font-extrabold">Такого события нет</h1>
-      <p class="m-0 text-ink-2">Возможно, ссылка неверна или событие убрали из афиши. Посмотрите актуальную афишу.</p>
+def render_not_found_page(title: str = "Такого события нет", text: str = "Возможно, ссылка неверна или событие убрали из афиши. Посмотрите актуальную афишу.") -> str:
+    body = f"""    <article class="grid gap-4 rounded-panel border border-stroke bg-glass-hi p-6 text-center shadow-surface">
+      <h1 class="m-0 text-[1.6rem] font-extrabold">{esc(title)}</h1>
+      <p class="m-0 text-ink-2">{esc(text)}</p>
       <div><a class="inline-flex min-h-[50px] items-center justify-center gap-2 rounded-ctl bg-brand px-6 font-bold text-white no-underline shadow-cta tx-btn hover:bg-brand-hover" href="/">Открыть афишу</a></div>
     </article>"""
-    return _layout("Событие не найдено — Афиша культуры Башкортостана", "Такого события нет в афише.", body, robots="noindex")
+    return _layout(f"{title} — Афиша культуры Башкортостана", text, body, robots="noindex")
+
+
+def _args_text(args: dict) -> str:
+    return ", ".join(f"{k}={v}" for k, v in (args or {}).items()) or "без условий"
+
+
+def render_trace_page(trace) -> str:
+    """Трасса ответа агента для человека: откуда взялся каждый факт."""
+    mode = "ответила модель" if trace.mode == "llm" else "режим без ИИ: разбор запроса по правилам"
+    rows = []
+    for number, step in enumerate(trace.steps, 1):
+        ids = ", ".join(f'<a class="text-brand underline" href="/event/{int(i)}">№{int(i)}</a>' for i in step.get("event_ids", [])[:12]) or "—"
+        status = "" if step.get("ok", True) else f' <b class="text-bad">ошибка: {esc(step.get("error", ""))}</b>'
+        rows.append(f'<tr><td class="border-t border-line px-2 py-2 align-top">{number}</td><td class="border-t border-line px-2 py-2 align-top font-semibold">{esc(step.get("tool"))}{status}</td>'
+                    f'<td class="border-t border-line px-2 py-2 align-top [overflow-wrap:anywhere]">{esc(_args_text(step.get("args", {})))}</td>'
+                    f'<td class="border-t border-line px-2 py-2 align-top">{esc(step.get("total") if step.get("total") is not None else "—")}</td>'
+                    f'<td class="border-t border-line px-2 py-2 align-top">{ids}</td></tr>')
+    steps = ('<div class="overflow-x-auto"><table class="w-full border-collapse text-[.92rem]"><thead><tr>'
+             + "".join(f'<th class="px-2 py-2 text-left text-[.76rem] font-extrabold uppercase tracking-[.08em] text-ink-3">{h}</th>'
+                       for h in ("№", "Инструмент", "Аргументы", "Найдено", "События"))
+             + f"</tr></thead><tbody>{''.join(rows)}</tbody></table></div>") if rows else '<p class="m-0 text-ink-3">Инструменты не вызывались.</p>'
+    conditions = trace.plan.get("conditions") or ([_args_text(trace.plan["filters"])] if trace.plan.get("filters") else [])
+    plan = "".join(f"<li>{esc(c)}</li>" for c in conditions) or "<li>условия не определены</li>"
+    extras = []
+    for key, label in (("corrections", "Поправлено"), ("unsupported", "Не смог учесть"), ("refinements", "Уточнение")):
+        if trace.plan.get(key):
+            extras.append(f"<li>{label}: {esc(', '.join(map(str, trace.plan[key])))}</li>")
+    flags = ", ".join(f"{esc(k)}" for k in trace.flags) or "нет"
+    events = "".join(f'<li><a class="text-brand underline" href="/event/{int(e["id"])}">{esc(e.get("title") or "событие")}</a> <span class="text-ink-3">№{int(e["id"])}</span></li>'
+                     for e in trace.events) or "<li>событий не показано</li>"
+    cost = f"{trace.cost_rub:g} ₽" if trace.cost_rub is not None else (esc(trace.cost_note) if trace.cost_note else "0 ₽ (модель не вызывалась)")
+    section = "mt-2 grid gap-2"
+    body = f"""    <article class="grid gap-5 rounded-panel border border-stroke bg-glass-hi p-6 shadow-surface w600:p-4">
+      <h1 class="m-0 text-[1.6rem] font-extrabold tracking-[-.02em]">Как получен ответ</h1>
+      <p class="m-0 text-ink-2">Каждый факт в ответе берётся из событий в базе афиши, а не из памяти модели. Ниже видно, что спросили, как это поняли и какие события стали основанием.</p>
+      <section class="{section}"><h2 class="m-0 text-[.76rem] font-extrabold uppercase tracking-[.08em] text-ink-3">Вопрос</h2><p class="m-0 font-semibold [overflow-wrap:anywhere]">{esc(trace.query)}</p></section>
+      <section class="{section}"><h2 class="m-0 text-[.76rem] font-extrabold uppercase tracking-[.08em] text-ink-3">Как поняли ({esc(mode)})</h2><ul class="m-0 grid gap-1 pl-5">{plan}{''.join(extras)}</ul></section>
+      <section class="{section}"><h2 class="m-0 text-[.76rem] font-extrabold uppercase tracking-[.08em] text-ink-3">Вызовы инструментов</h2>{steps}</section>
+      <section class="{section}"><h2 class="m-0 text-[.76rem] font-extrabold uppercase tracking-[.08em] text-ink-3">События-основания ответа</h2><ul class="m-0 grid gap-1 pl-5">{events}</ul></section>
+      <section class="{section}"><h2 class="m-0 text-[.76rem] font-extrabold uppercase tracking-[.08em] text-ink-3">Ответ</h2><p class="m-0 whitespace-pre-wrap text-ink-2 [overflow-wrap:anywhere]">{esc(trace.reply)}</p></section>
+      <section class="{section}"><h2 class="m-0 text-[.76rem] font-extrabold uppercase tracking-[.08em] text-ink-3">Служебное</h2>
+        <p class="m-0 text-[.92rem] text-ink-3">Задержка: {int(trace.latency_ms)} мс · токены: {int(trace.input_tokens)} + {int(trace.output_tokens)} · стоимость: {cost} · модель: {esc(trace.model or "не использовалась")} · версия промпта: {esc(trace.prompt_version or "—")} · отметки: {flags}</p>
+        <p class="m-0 text-[.85rem] text-ink-3">Трасса хранится 30 дней. Ссылка случайная: поделиться ею может только тот, у кого она есть.</p></section>
+    </article>"""
+    return _layout("Как получен ответ — Афиша культуры Башкортостана", f"Трасса ответа: {trace.query[:120]}", body, robots="noindex, nofollow")

@@ -96,9 +96,17 @@ def test_unchecked_conditions_are_never_dropped_silently(session, add):
     assert "не позже 20:00" in result.reply and "ехать не больше 20 минут" in result.reply
 
 
-def test_language_requests_are_declared_unsupported(session, seeded):
+def test_language_is_a_real_filter_and_its_sparse_data_is_explained(session, seeded):
     result = agent.ask(session, "детям в воскресенье на башкирском языке", now=NOW)
-    assert "язык мероприятия" in result.reply and "Не смог учесть" in result.reply
+    assert "Ослабил условие по языку: именно оно мешало" in result.reply  # язык у этих событий не указан
+    assert "где данные указаны" in result.reply and result.events
+
+
+def test_language_filter_finds_events_where_the_language_is_known(session, add):
+    add("Спектакль для малышей", datetime(2026, 11, 8, 12, 0), category="kids", description="Спектакль на башкирском языке.")
+    add("Обычный спектакль", datetime(2026, 11, 8, 14, 0), category="kids")
+    result = agent.ask(session, "детям в воскресенье на башкирском языке", now=NOW)
+    assert [e.title for e in result.events] == ["Спектакль для малышей"] and "Ослабил" not in result.reply
 
 
 def test_group_budget_is_applied_per_ticket(session, add):

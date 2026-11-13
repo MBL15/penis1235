@@ -27,6 +27,7 @@ from .schemas import (
     RejectedRecord,
 )
 from .search import SearchFilters, get_event, search
+from .tracing import get_trace, list_traces
 
 router = APIRouter(
     prefix="/admin", tags=["Администрирование"], dependencies=[Depends(require_admin)],
@@ -133,6 +134,18 @@ def audit_log(
     return [AuditEntryOut(id=e.id, at=e.at, actor=e.actor, action=e.action, event_id=e.event_id, changes=e.changes or {},
                           request_id=e.request_id or "")
             for e in audit.entries(session, event_id=event_id, actor=actor, limit=limit, offset=offset)]
+
+
+@router.get("/traces", summary="Трассы ответов агента (последние первыми)")
+def admin_traces(
+    session: SessionDep,
+    mode: Annotated[str | None, Query(pattern="^(llm|rules)$")] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
+) -> list[dict]:
+    return [{"id": t.id, "created_at": t.created_at, "mode": t.mode, "query": t.query[:200], "events": len(t.event_ids or []),
+             "latency_ms": t.latency_ms, "tokens": (t.input_tokens or 0) + (t.output_tokens or 0), "cost_rub": t.cost_rub,
+             "flags": sorted((t.flags or {}).keys())} for t in list_traces(session, mode=mode, limit=limit, offset=offset)]
 
 
 @router.get("/feedback", response_model=list[FeedbackOut], summary="Обращения через форму обратной связи")
