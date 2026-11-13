@@ -120,6 +120,14 @@ def event_page(request: Request, event_id: str, session: SessionDep) -> Response
     return cached_html(request, render_event_page(event), max_age=60)
 
 
+@app.get("/plan", include_in_schema=False)
+def plan_page(request: Request, session: SessionDep) -> Response:
+    """Планировщик «Выходной день»: форма и результат на одной странице; параметры в адресной строке, ссылкой можно поделиться."""
+    from .plan_page import build_page
+
+    return cached_html(request, build_page(session, request.query_params), max_age=0)
+
+
 @app.get("/admin", include_in_schema=False)
 def admin_page() -> FileResponse:
     """Интерфейс модератора. Данные открываются только по ключу, сама страница не индексируется."""

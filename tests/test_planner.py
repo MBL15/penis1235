@@ -128,3 +128,48 @@ def test_plan_api_returns_plan_and_validates_input(client, add):
     assert client.post("/api/v1/plan", json={**body, "children": [30]}).status_code == 422
     assert client.post("/api/v1/plan", json={**body, "city": "Атлантида"}).status_code == 422
     assert client.post("/api/v1/plan", json={**body, "events": 9}).status_code == 422
+
+
+def test_plan_page_renders_form_result_and_errors(client, add):
+    put(add, "Утро", at(10), price=100, venue="А")
+    put(add, "День", at(14), price=200, venue="Б")
+    form = client.get("/plan")
+    assert form.status_code == 200 and "Выходной день" in form.text and 'name="budget"' in form.text and "Итого" not in form.text
+    page = client.get("/plan", params={"day": DAY.isoformat(), "events": 2, "budget": 1000, "adults": 2, "city": "Уфа"})
+    assert page.status_code == 200 and "Итого: 600 ₽" in page.text and "Утро" in page.text and "/event/" in page.text
+    assert f'value="{DAY.isoformat()}"' in page.text  # состояние формы сохраняется: ссылкой можно поделиться
+    assert "role=\"alert\"" in client.get("/plan", params={"day": "не дата"}).text
+    assert "Проверьте числа" in client.get("/plan", params={"day": DAY.isoformat(), "adults": "99"}).text
+    assert "должны быть числами" in client.get("/plan", params={"day": DAY.isoformat(), "budget": "много"}).text
+    assert "<script>" not in client.get("/plan", params={"day": DAY.isoformat(), "children": "<script>"}).text
+    tight = client.get("/plan", params={"day": DAY.isoformat(), "events": 2, "budget": 10})
+    assert "Что изменить" in tight.text and "поднять бюджет" in tight.text.lower()
+
+
+def test_ongoing_events_without_a_start_on_that_day_are_not_scheduled(session, add):
+    """Выставка «с 13 по 30 ноября» находится поиском по дате, но времени посещения у неё нет: в расписание не ставим."""
+    add("Выставка на месяц", datetime.combine(DAY - timedelta(days=1), time(10, 0)), end_at=datetime.combine(DAY + timedelta(days=16), time(20, 0)),
+        price_min=100, city="Уфа", venue="Музей", category="exhibition", url="https://example.org/ex")
+    put(add, "Утро", at(10), price=100, venue="А")
+    put(add, "День", at(14), price=100, venue="Б")
+    result = plan_weekend(session, PlanRequest(day=DAY, events=3))
+    assert "Выставка на месяц" not in titles(result) and len(result.items) == 2 and "2 из 3" in result.message
+
+
+def test_plan_command_text_is_parsed_and_rendered(session, add):
+    from app import bot
+    from app.planner import render_plan_text, request_from_text
+
+    req = request_from_text("2000 рублей на двоих, суббота, Уфа, ребёнок 8 лет, с 12 до 20, дорога до 30 минут, 2 события", TODAY)
+    assert req.budget == 2000 and req.children == [8] and req.adults == 1 and req.people == 2
+    assert req.city == "Уфа" and req.max_travel_min == 30 and req.events == 2 and req.day.weekday() == 5
+    assert (req.window_from, req.window_to) == (time(12), time(20))
+    default = request_from_text("", TODAY, default_city="Салават")
+    assert default.city == "Салават" and default.max_travel_min == 40 and default.events == 3 and default.window_from == time(10)
+
+    put(add, "Детский спектакль", at(12), age=0, price=300, venue="Кукольный", category="kids")
+    put(add, "Мастер-класс", at(16), age=6, price=200, venue="Центр", category="kids")
+    view = bot.plan_view(session, "суббота Уфа ребёнок 8 лет 2 события", None)
+    assert "Детский спектакль" in view.text and "Итого: 1000 ₽" not in view.text and "Итого" in view.text
+    assert [b.callback_data for row in view.markup.inline_keyboard for b in row][:2] != []
+    assert "<script>" not in render_plan_text(plan_weekend(session, req), html=True)

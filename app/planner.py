@@ -5,6 +5,7 @@
 Выход: события по порядку, время в пути между ними, стоимость каждого и итог. Если ограничения несовместимы, называется то, что
 мешает, и предлагается минимальное изменение (поднять бюджет, расширить окно, разрешить дорогу подольше, убрать событие).
 
+Берутся события, которые начинаются в этот день: выставки и экскурсии «на период» без часов работы в план не попадают.
 Как оценивается дорога: то же место 0 минут; у обоих событий есть координаты: расстояние по прямой со скоростью 25 км/ч плюс 5 минут;
 координат нет: 20 минут по городу и 90 между городами. Это оценка, а не маршрут: для неё нет сервиса карт."""
 import math
@@ -174,7 +175,9 @@ def _candidates(session: Session, req: PlanRequest, now: datetime) -> list[_Slot
         f.age = min(req.children)  # подходить должно самому младшему
         f.kids = None
     events, _ = search(session, f, now)
-    slots = [s for s in (_slot(e, req.people) for e in events) if s is not None]
+    # Только события, которые начинаются в этот день: у выставок и экскурсий «на период» часы работы неизвестны, поставить их
+    # в расписание на конкретное время нельзя.
+    slots = [s for s in (_slot(e, req.people) for e in events if e.start_at.date() == req.day) if s is not None]
     slots.sort(key=lambda s: (-s.score, s.start))
     return slots[:MAX_CANDIDATES]
 
@@ -270,3 +273,56 @@ def parse_budget_text(text: str) -> tuple[int | None, int | None]:
     money = re.search(r"(\d[\d\s]{1,6})\s*(?:₽|руб\w*|р\b)", low)
     people = next((n for word, n in PEOPLE.items() if word in low), None)
     return (int(money.group(1).replace(" ", "")) if money else None), people
+
+
+def request_from_text(text: str, today: date, *, default_city: str | None = None) -> PlanRequest:
+    """Команда /plan в боте: «2000 на двоих, суббота, Уфа, с ребёнком 8 лет, с 12 до 20, дорога до 30 минут, 3 события».
+
+    Дату, город, время и возраст разбирает rules.py (тот же разбор, что у запасного режима поиска), бюджет и состав, время в пути и
+    число событий разбираются здесь. Неназванное берётся по умолчанию: ближайшая суббота, окно 10:00–22:00, дорога до 40 минут."""
+    import re
+
+    from .rules import parse_query
+
+    parsed = parse_query(text or "", today)
+    f = parsed.filters
+    day = f.date_from or today + timedelta(days=(5 - today.weekday()) % 7 or 7)
+    budget, people = parse_budget_text(text)
+    children = [f.age] if f.age is not None else []
+    adults = max(1, people - len(children)) if people else (2 if children else 1)
+    low = (text or "").lower().replace("ё", "е")
+    travel = re.search(r"(?:ехать|добират\w*|в пути|дорог\w*)\D{0,20}(\d{1,3})\s*мин", low)
+    window = re.search(r"(?<![а-я])с\s+(\d{1,2})(?::(\d\d))?\s*(?:до|по|-|–)\s*(\d{1,2})(?::(\d\d))?", low)  # «с 12 до 20», «с 11:30 до 18:00»
+    window_from, window_to = f.time_from or time(10, 0), f.ends_by or f.time_to or time(22, 0)
+    if window:
+        h1, m1, h2, m2 = (int(x or 0) for x in window.groups())
+        if 0 <= h1 < 24 and 0 <= h2 < 24 and (h1, m1) < (h2, m2):
+            window_from, window_to = time(h1, m1), time(h2, m2)
+    count = re.search(r"\b([234])\s*(?:событ|мероприят|места)", low)
+    return PlanRequest(
+        day=day, window_from=window_from, window_to=window_to, budget=budget, adults=adults,
+        children=children, city=f.city or default_city, max_travel_min=int(travel.group(1)) if travel else 40,
+        events=int(count.group(1)) if count else 3)
+
+
+def render_plan_text(result: PlanResult, *, html: bool = False) -> str:
+    """План текстом для бота (html=True — для parse_mode=HTML, значения экранируются)."""
+    import html as _html
+
+    esc = _html.escape if html else (lambda s: s)
+    bold = (lambda s: f"<b>{s}</b>") if html else (lambda s: s)
+    lines = [bold(esc("Выходной день: " + ", ".join(result.request.describe()))), "", esc(result.message)]
+    for number, item in enumerate(result.items, 1):
+        end = f"{item.end:%H:%M}" + (" (оценка)" if item.end_estimated else "")
+        price = f"{item.cost} ₽ на всех" if item.price_known else "цена неизвестна"
+        if item.travel_min:
+            lines.append(f"   ↓ в пути около {item.travel_min} мин")
+        lines.append(f"{number}. {item.start:%H:%M}–{end} {esc(item.event.title)}")
+        lines.append(f"   📍 {esc(', '.join(p for p in (item.event.venue, item.event.city) if p))} · {esc(price)}")
+    if result.items:
+        lines.append("")
+        lines.append(bold(esc(f"Итого: {result.total_cost} ₽, дорога около {result.total_travel_min} мин")))
+    if result.suggestions:
+        lines.append("")
+        lines.append(esc("Что изменить: " + "; ".join(s[0].lower() + s[1:] for s in result.suggestions)))
+    return "\n".join(lines)

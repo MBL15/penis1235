@@ -86,6 +86,7 @@ HELP = (
     "• Кнопки меню: сегодня, завтра, выходные, неделя, бесплатно, детям.\n"
     "• Просто напишите запрос: <i>«концерт в Стерлитамаке в субботу до 1500 рублей»</i>.\n"
     "• /city — выбрать город, /categories — категории, /app — афиша в окне Telegram.\n"
+    "• /plan — план выходного дня: 2–4 события без пересечений, с дорогой и стоимостью.\n"
     "• /subscribe — подписаться на новые события города и категории. Пишу не чаще раза в сутки, днём, не больше пяти событий.\n"
     "• /subscriptions — мои подписки, /unsubscribe — отписаться от всех одной командой.\n"
     "• /cancel — отменить начатое действие.\n\n"
@@ -406,6 +407,41 @@ async def on_start(message: Message) -> None:
 @router.message(Command("help"))
 async def on_help(message: Message) -> None:
     await message.answer(HELP, reply_markup=menu_markup(chat_city.get(message.chat.id)), disable_web_page_preview=True)
+
+
+PLAN_HELP = (
+    "<b>Выходной день</b>: соберу 2–4 события без пересечений, с дорогой и общей стоимостью.\n"
+    "Напишите после команды условия, например:\n"
+    "<i>/plan 2000 рублей на двоих, суббота, Уфа, ребёнок 8 лет, с 12 до 20, дорога до 30 минут</i>\n"
+    "Что не названо, берётся по умолчанию: ближайшая суббота, 10:00–22:00, дорога до 40 минут, 3 события."
+)
+
+
+def plan_view(session: Session, text: str, city: str | None) -> View:
+    from .planner import plan_weekend, render_plan_text, request_from_text
+
+    result = plan_weekend(session, request_from_text(text, now_local().date(), default_city=city))
+    kb = InlineKeyboardBuilder()
+    for number, item in enumerate(result.items, 1):
+        kb.button(text=f"{number}. {item.event.title[:28]}", callback_data=f"e:{item.event.id}")
+    kb.button(text="🏠 Меню", callback_data="menu")
+    kb.adjust(1)
+    return View(clip(render_plan_text(result, html=True)), kb.as_markup())
+
+
+@router.message(Command("plan"))
+async def on_plan(message: Message) -> None:
+    text = (message.text or "").partition(" ")[2].strip()[:MAX_QUESTION]
+    if not text:
+        await message.answer(PLAN_HELP, reply_markup=menu_markup(chat_city.get(message.chat.id)))
+        return
+
+    def work() -> View:
+        with SessionLocal() as session:
+            return plan_view(session, text, chat_city.get(message.chat.id))
+
+    view = await asyncio.to_thread(work)
+    await message.answer(view.text, reply_markup=view.markup, disable_web_page_preview=True)
 
 
 @router.message(Command("cancel"))
@@ -794,6 +830,7 @@ async def run() -> None:
          BotCommand(command="kids", description="Детям"),
          BotCommand(command="city", description="Выбрать город"),
          BotCommand(command="categories", description="Категории"),
+         BotCommand(command="plan", description="Выходной день: план из 2–4 событий"),
          BotCommand(command="subscribe", description="Подписаться на новые события"),
          BotCommand(command="unsubscribe", description="Отписаться от всех подписок"),
          BotCommand(command="cancel", description="Отменить действие"),
