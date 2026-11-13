@@ -11,12 +11,15 @@ from fastapi import HTTPException, Request
 from starlette.responses import JSONResponse
 
 from . import config
+from .errors import error_response
 
 log = logging.getLogger("afisha.security")
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 MAX_BODY = 1024 * 1024  # 1 МБ хватает любому JSON-запросу интерфейса
 MAX_BODY_BULK = 5 * 1024 * 1024  # пачка до 500 событий
+BULK_PATHS = ("/api/events/bulk", "/api/v1/events/bulk", "/api/v1/admin/import")
+HEALTH_PATHS = ("/api/health", "/api/v1/health")
 
 
 # ---------- адрес посетителя и лимиты ----------
@@ -171,7 +174,7 @@ def security_headers(path: str, *, https: bool) -> dict[str, str]:
         headers["X-Frame-Options"] = "DENY"
     if https:
         headers["Strict-Transport-Security"] = "max-age=31536000"
-    if path == "/api/ask":
+    if path in ("/api/ask", "/api/v1/ask"):
         headers["Cache-Control"] = "no-store"
     return headers
 
@@ -203,11 +206,11 @@ def body_too_large(request: Request) -> JSONResponse | None:
     declared = request.headers.get("content-length")
     if declared is None:
         if request.headers.get("transfer-encoding"):
-            return JSONResponse({"detail": "Нужен заголовок Content-Length"}, status_code=411)
+            return error_response(411, "Нужен заголовок Content-Length")
         return None  # запрос без тела
-    limit = MAX_BODY_BULK if request.url.path == "/api/events/bulk" else MAX_BODY
+    limit = MAX_BODY_BULK if request.url.path in BULK_PATHS else MAX_BODY
     if not declared.isdigit() or int(declared) > limit:
-        return JSONResponse({"detail": f"Тело запроса больше {limit // 1024} КБ"}, status_code=413)
+        return error_response(413, f"Тело запроса больше {limit // 1024} КБ")
     return None
 
 
@@ -217,9 +220,9 @@ async def guard(request: Request, call_next):
     response = body_too_large(request)
     if response is None and path.startswith("/api/"):
         if cross_site_write(request):
-            response = JSONResponse({"detail": "Изменяющие запросы с других сайтов запрещены"}, status_code=403)
-        elif path != "/api/health" and not api_limiter.allow(RateLimiter.client_ip(request)):
-            response = JSONResponse({"detail": api_limiter.detail}, status_code=429, headers={"Retry-After": "60"})
+            response = error_response(403, "Изменяющие запросы с других сайтов запрещены")
+        elif path not in HEALTH_PATHS and not api_limiter.allow(RateLimiter.client_ip(request)):
+            response = error_response(429, api_limiter.detail, headers={"Retry-After": "60"})
     if response is None:
         response = await call_next(request)
     for name, value in security_headers(path, https=request.url.scheme == "https").items():

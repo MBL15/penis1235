@@ -48,6 +48,11 @@ class EventIn(BaseModel):
     source: str = Field(min_length=1, max_length=100, description="Имя источника, например bashopera.ru")
     source_url: str = Field("", max_length=500)
 
+    model_config = {"json_schema_extra": {"examples": [{
+        "title": "Концерт симфонического оркестра", "start_at": "2026-11-21T19:00:00+05:00", "city": "Уфа",
+        "venue": "Башкирская государственная филармония", "category": "concert", "price_min": 300, "price_max": 1200,
+        "age_limit": "6+", "url": "https://example.ru/events/1", "source": "example.ru"}]}}
+
     @field_validator("title", "venue", "address", "source")
     @classmethod
     def _strip(cls, value: str) -> str:
@@ -143,6 +148,23 @@ class BulkIngestResult(BaseModel):
 
 class StatusPatch(BaseModel):
     status: StatusName
+
+
+class ErrorBody(BaseModel):
+    code: str = Field(description="Машинный код: not_found, validation_error, unauthorized, rate_limited, …")
+    message: str = Field(description="Сообщение для человека, по-русски")
+    details: list[dict] = Field(default_factory=list, description="Подробности; для validation_error: [{field, message}]")
+    request_id: str = Field("", description="Идентификатор запроса (он же заголовок X-Request-ID), по нему ищут запись в логе")
+
+
+class ErrorOut(BaseModel):
+    """Единый формат всех ошибок API."""
+
+    error: ErrorBody
+
+    model_config = {"json_schema_extra": {"examples": [{"error": {
+        "code": "validation_error", "message": "Некорректные параметры запроса",
+        "details": [{"field": "limit", "message": "не больше 100"}], "request_id": "9f1c0b7e5d3a4c2e8b6a1d0f3e5c7a92"}}]}}
 
 
 class ChatTurn(BaseModel):

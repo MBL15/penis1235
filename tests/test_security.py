@@ -130,7 +130,7 @@ def test_non_ascii_key_is_a_plain_401(client, admin_key):
 def test_short_admin_key_disables_ingest(client, monkeypatch):
     monkeypatch.setattr(config, "ADMIN_API_KEY", "short")
     response = client.post("/api/events", json=payload(), headers={"X-API-Key": "short"})
-    assert response.status_code == 503 and "короче" in response.json()["detail"]
+    assert response.status_code == 503 and "короче" in response.json()["error"]["message"]
 
 
 def test_key_guessing_is_throttled(client, admin_key):

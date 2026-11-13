@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+API_VERSION = "1.1.0"  # версия контракта API; в адресе — /api/v1, мажорная версия меняется только при несовместимых изменениях
 DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{(BASE_DIR / 'afisha.db').as_posix()}"
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
 # Короткий ключ подбирается перебором: приём данных включается только с ключом не короче этой длины.
@@ -51,6 +52,12 @@ API_RATE_LIMIT = _int_env("API_RATE_LIMIT", 300) or 300
 LLM_MAX_CONCURRENCY = _int_env("LLM_MAX_CONCURRENCY", 4) or 4
 LLM_DAILY_LIMIT = _int_env("LLM_DAILY_LIMIT", 3000)
 LLM_TIME_BUDGET = _int_env("LLM_TIME_BUDGET", 45) or 45  # секунд на весь ответ вместе с вызовами инструментов
+
+# Логи: json (по умолчанию, по строке на запрос) или text для разработки. В логи не попадают адреса и тексты запросов.
+LOG_FORMAT = os.getenv("LOG_FORMAT", "json")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+# Если задан, /metrics требует заголовок Authorization: Bearer <токен>. Без него метрики открыты: закройте их на прокси.
+METRICS_TOKEN = os.getenv("METRICS_TOKEN", "")
 
 AGENT_MODE = os.getenv("AGENT_MODE", "auto")  # auto | llm | rules
 # Помощник работает на Google Gemini (ключ из AI Studio); без ключа отвечает режим правил.

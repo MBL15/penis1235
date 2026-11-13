@@ -30,7 +30,7 @@
     const response = await fetch(path, options);
     if (!response.ok) {
       let detail = '';
-      try { const body = await response.json(); detail = typeof body.detail === 'string' ? body.detail : ''; } catch (_) { /* пусто */ }
+      try { const body = await response.json(); detail = body.error && typeof body.error.message === 'string' ? body.error.message : ''; } catch (_) { /* пусто */ }
       throw new Error(detail || `Ошибка ${response.status}`);
     }
     return response.json();
@@ -299,7 +299,7 @@
       else results.innerHTML = Array.from({ length: PAGE }, (_, i) => skeletonHtml(bentoClass(i))).join('');
     }
     try {
-      const data = await api(`/api/events?${params}`);
+      const data = await api(`/api/v1/events?${params}`);
       if (seq !== loadSeq) return; // фильтры уже поменялись, показывать этот ответ нельзя
       const html = data.items.map((event, i) => cardHtml(event, bentoClass(state.rendered + i), i)).join('');
       if (append) results.insertAdjacentHTML('beforeend', html);
@@ -328,7 +328,7 @@
 
   async function loadMeta() {
     let meta;
-    try { meta = await api('/api/meta'); } catch (_) { return; }
+    try { meta = await api('/api/v1/meta'); } catch (_) { return; }
     $('#demo-banner').hidden = !meta.demo_data;
     const citySelect = $('#f-city');
     meta.cities.forEach((c) => citySelect.insertAdjacentHTML('beforeend', `<option value="${esc(c.name)}">${esc(c.name)} (${Number(c.count) || 0})</option>`));
@@ -350,7 +350,7 @@
   }
 
   async function loadStats() {
-    const count = (query) => api(`/api/events?${query}&limit=1`).then((d) => d.total).catch(() => '–');
+    const count = (query) => api(`/api/v1/events?${query}&limit=1`).then((d) => d.total).catch(() => '–');
     const [today, weekend, free] = await Promise.all([count('when=today'), count('when=weekend'), count('free=true')]);
     countTo($('#stat-today strong'), today);
     countTo($('#stat-weekend strong'), weekend);
@@ -561,7 +561,7 @@
     $('#send').disabled = true;
     saveChats(); renderList(); renderThread();
     try {
-      const data = await api('/api/ask', {
+      const data = await api('/api/v1/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, history }),

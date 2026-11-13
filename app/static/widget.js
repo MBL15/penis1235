@@ -70,7 +70,7 @@
   if (cfg.free === 'true') params.set('free', 'true');
   if (cfg.kids === 'true') params.set('kids', 'true');
 
-  fetch(origin + '/api/events?' + params)
+  fetch(origin + '/api/v1/events?' + params)
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function (data) {
       var body = root.querySelector('.body');
