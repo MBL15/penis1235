@@ -126,7 +126,6 @@
   const PILL_TONE = { plain: 'border-stroke bg-white/[.78] font-semibold text-ink-2', price: 'border-stroke bg-white/[.78] font-[750] text-brand-ink', verified: 'border-transparent bg-ok-bg font-semibold text-ok' };
 
   function cardHtml(event, cls = '', index = 0, animate = true) {
-    const url = safeUrl(event.url);
     const image = safeUrl(event.image_url);
     const slug = event.category in CATS ? event.category : 'other';
     const kind = cls in CARD_KIND ? cls : '';
@@ -137,9 +136,8 @@
     if (event.is_demo) badges.push(badge('demo', 'демо', ' title="Выдуманное событие для демонстрации"'));
     const place = [event.venue, event.city].filter(Boolean).join(', ');
     const linkClass = `text-inherit font-[inherit] ${cancelled ? 'line-through decoration-[1.5px]' : 'no-underline'} after:absolute after:inset-0 after:z-[1] after:rounded-[inherit] after:content-[''] focus-visible:outline-none`;
-    const title = url
-      ? `<a class="${linkClass}" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(event.title)}<span class="sr-only"> (откроется в новой вкладке)</span></a>`
-      : esc(event.title);
+    // Заголовок ведёт на карточку события с постоянной ссылкой; источник и билеты открываются уже оттуда.
+    const title = `<a class="${linkClass}" href="/event/${Number(event.id) || 0}">${esc(event.title)}</a>`;
     const pills = [];
     if (!event.is_free) pills.push(`<span class="${PILL} ${PILL_TONE.price}">${esc(event.price_text)}</span>`);
     if (Number(event.age_limit) > 0) pills.push(`<span class="${PILL} ${PILL_TONE.plain}">${Number(event.age_limit)}+</span>`);

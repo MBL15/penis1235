@@ -5,17 +5,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 
 from . import config, errors
 from .api_public import router as public_router
 from .db import init_db
+from .http_cache import cached_html
+from .pages import render_event_page, render_not_found_page
 from .deps import SessionDep
 from .models import Event
 from .observability import metrics, observe, setup_logging
-from .search import _conditions, SearchFilters
+from .search import SearchFilters, _conditions, get_event
 from .security import ask_limiter, auth_limiter, guard  # noqa: F401  (ask_limiter и auth_limiter используют тесты)
 
 log = logging.getLogger("afisha.api")
@@ -93,6 +95,15 @@ def metrics_endpoint(request: Request, session: SessionDep) -> PlainTextResponse
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/event/{event_id}", include_in_schema=False)
+def event_page(request: Request, event_id: str, session: SessionDep) -> Response:
+    """Карточка события с постоянной ссылкой. Отменённое событие открывается с явной пометкой, черновик и неверный номер дают 404."""
+    event = get_event(session, int(event_id)) if event_id.isdigit() and len(event_id) <= 10 and int(event_id) < 2**31 else None
+    if event is None:
+        return cached_html(request, render_not_found_page(), max_age=0, status_code=404)
+    return cached_html(request, render_event_page(event), max_age=60)
 
 
 @app.get("/widget.js", include_in_schema=False)

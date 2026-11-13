@@ -77,7 +77,7 @@
       body.className = 'body';
       if (!data.items.length) { body.className = 'body e'; body.textContent = 'Ближайших событий не найдено.'; return; }
       body.innerHTML = '<ul>' + data.items.map(function (e) {
-        var link = /^https?:\/\//i.test(e.url) ? e.url : '';
+        var link = origin + '/event/' + (Number(e.id) || 0);  // карточка события на нашем сервисе: оттуда есть ссылка на источник
         var title = link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">' + esc(e.title) + '</a>' : esc(e.title);
         var badge = e.status !== 'scheduled' ? '<span class="b ' + esc(e.status) + '">' + esc(e.status_label) + '</span>' : '';
         if (e.is_demo) badge += '<span class="b">демо</span>';

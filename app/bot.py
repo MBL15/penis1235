@@ -269,7 +269,9 @@ def event_view(session: Session, event_id: int) -> View | None:
         return None
     kb = InlineKeyboardBuilder()
     if (event.url or "").startswith(("http://", "https://")):
-        kb.button(text="Открыть на сайте", url=event.url)
+        kb.button(text="🔗 Источник и билеты", url=event.url)
+    if config.PUBLIC_URL.startswith("https://"):  # Telegram не принимает кнопки с адресом без HTTPS
+        kb.button(text="📄 Карточка с постоянной ссылкой", url=f"{config.PUBLIC_URL}/event/{event.id}")
     kb.button(text="🏠 Меню", callback_data="menu")
     kb.adjust(1)
     return View(clip(render_event(event, html=True, details=True)), kb.as_markup())
