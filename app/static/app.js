@@ -178,6 +178,7 @@
     set('category', state.categories.join(','));
     set('q', $('#f-q').value.trim());
     set('city', $('#f-city').value);
+    set('venue', $('#f-venue').value.trim());
     set('price_max', $('#f-price').value);
     set('age', $('#f-age').value);
     if (state.free) params.set('free', 'true');
@@ -200,13 +201,14 @@
     state.free = p.get('free') === 'true';
     $('#f-q').value = p.get('q') || '';
     $('#f-city').value = p.get('city') || '';
+    $('#f-venue').value = p.get('venue') || '';
     $('#f-price').value = p.get('price_max') || '';
     $('#f-age').value = p.get('age') || '';
     $('#f-date').value = p.get('date_from') && p.get('date_from') === p.get('date_to') ? p.get('date_from') : '';
     $('#f-kids').checked = p.get('kids') === 'true';
     $('#f-cancelled').checked = p.get('status') === 'all';
     $('#f-sort').value = p.get('sort') === 'price' ? 'price' : 'date';
-    if ($('#f-date').value || $('#f-price').value || $('#f-age').value || $('#f-kids').checked || $('#f-cancelled').checked) {
+    if ($('#f-date').value || $('#f-price').value || $('#f-age').value || $('#f-venue').value || $('#f-kids').checked || $('#f-cancelled').checked) {
       $('#more-filters').open = true;
     }
   }
@@ -226,6 +228,7 @@
     state.categories.forEach((slug) => add(categories[slug] || slug, () => { state.categories = state.categories.filter((s) => s !== slug); }));
     if ($('#f-q').value.trim()) add(`«${$('#f-q').value.trim()}»`, () => { $('#f-q').value = ''; });
     if ($('#f-city').value) add($('#f-city').value, () => { $('#f-city').value = ''; });
+    if ($('#f-venue').value.trim()) add(`Площадка: ${$('#f-venue').value.trim()}`, () => { $('#f-venue').value = ''; });
     if ($('#f-price').value) add(`до ${$('#f-price').value} ₽`, () => { $('#f-price').value = ''; });
     if ($('#f-age').value) add(`${$('#f-age').value}+ лет`, () => { $('#f-age').value = ''; });
     if (state.free) add('Бесплатно', () => { state.free = false; });
@@ -247,7 +250,7 @@
   }
 
   function resetAll() {
-    ['f-q', 'f-date', 'f-price', 'f-age'].forEach((id) => { $('#' + id).value = ''; });
+    ['f-q', 'f-date', 'f-price', 'f-age', 'f-venue'].forEach((id) => { $('#' + id).value = ''; });
     $('#f-city').value = '';
     ['f-kids', 'f-cancelled'].forEach((id) => { $('#' + id).checked = false; });
     state.when = ''; state.categories = []; state.free = false;
@@ -347,6 +350,14 @@
     reveal(grid);
     countTo($('#total-events'), meta.cities.reduce((sum, c) => sum + c.count, 0), ' событий');
     countTo($('#stat-cities strong'), meta.cities.length);
+  }
+
+  /** Подсказки для поля «Площадка»: самые частые площадки из справочника. */
+  async function loadVenues() {
+    try {
+      const venues = await api('/api/v1/venues?limit=200');
+      $('#venue-options').innerHTML = venues.map((v) => `<option value="${esc(v.name)}">${esc(v.city)}, событий: ${Number(v.count) || 0}</option>`).join('');
+    } catch (_) { /* подсказки необязательны */ }
   }
 
   async function loadStats() {
@@ -664,7 +675,7 @@
     if (e.target.closest('#retry')) load();
   });
   $('#f-date').addEventListener('change', () => { if ($('#f-date').value) state.when = ''; load(); });
-  ['f-city', 'f-price', 'f-age', 'f-kids', 'f-cancelled', 'f-sort'].forEach((id) => $('#' + id).addEventListener('change', () => load()));
+  ['f-city', 'f-price', 'f-age', 'f-venue', 'f-kids', 'f-cancelled', 'f-sort'].forEach((id) => $('#' + id).addEventListener('change', () => load()));
   let timer;
   $('#f-q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => load(), 300); });
   $('#more').addEventListener('click', () => load(true));
@@ -702,4 +713,5 @@
   }), 900);
   loadMeta().then(() => { readUrl(); load(); });
   loadStats();
+  loadVenues();
 })();

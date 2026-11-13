@@ -138,6 +138,34 @@ def get_event(session: Session, event_id: int, *, include_drafts: bool = False) 
     return event
 
 
+def venues(session: Session, now: datetime | None = None, *, city: str | None = None, q: str | None = None,
+           limit: int = 200) -> list[dict]:
+    """Справочник площадок с числом актуальных событий. Написания, различающиеся регистром, «ё» и знаками препинания
+    («Дворец молодёжи» и «Дворец Молодежи»), считаются одной площадкой; полный справочник с синонимами в планах."""
+    conds = _conditions(SearchFilters(city=city), now or now_local())
+    conds += [Event.venue_key.is_not(None), Event.venue_key != ""]
+    rows = session.execute(
+        select(Event.venue_key, Event.venue, Event.city, func.count())
+        .where(*conds).group_by(Event.venue_key, Event.venue, Event.city)
+    ).all()
+    wanted = norm_text(q[:200]) if q else ""
+    groups: dict[str, dict] = {}
+    for key, name, city_name, count in rows:
+        if wanted and wanted not in key:
+            continue
+        group = groups.setdefault(key, {"names": {}, "cities": {}, "count": 0})
+        group["names"][name] = group["names"].get(name, 0) + count
+        group["cities"][city_name] = group["cities"].get(city_name, 0) + count
+        group["count"] += count
+    result = []
+    for group in groups.values():
+        names = sorted(group["names"], key=lambda n: (-group["names"][n], n))
+        result.append({"name": names[0], "city": max(group["cities"], key=group["cities"].get), "count": group["count"],
+                       "names": names[1:6]})
+    result.sort(key=lambda v: (-v["count"], v["name"]))
+    return result[: max(1, min(limit, 500))]
+
+
 def facets(session: Session, now: datetime | None = None) -> dict:
     """Города и категории с числом актуальных событий: для фильтров в интерфейсе, боте и промпте агента."""
     conds = _conditions(SearchFilters(), now or now_local())

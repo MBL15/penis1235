@@ -138,6 +138,24 @@ class EventList(BaseModel):
     offset: int
 
 
+class CityOut(BaseModel):
+    name: str
+    count: int = Field(description="Сколько актуальных событий в городе")
+
+
+class CategoryOut(BaseModel):
+    slug: str
+    label: str
+    count: int
+
+
+class VenueOut(BaseModel):
+    name: str = Field(description="Название площадки (самое частое написание); его можно передать в параметр venue")
+    city: str
+    count: int
+    names: list[str] = Field(default_factory=list, description="Другие написания той же площадки в источниках")
+
+
 class IngestResult(BaseModel):
     outcome: Literal["created", "merged", "unchanged"]
     event: EventOut

@@ -20,6 +20,8 @@ from .schemas import (
     AskIn,
     AskOut,
     BulkIngestResult,
+    CategoryOut,
+    CityOut,
     ErrorOut,
     EventIn,
     EventList,
@@ -27,8 +29,9 @@ from .schemas import (
     IngestResult,
     RejectedRecord,
     StatusPatch,
+    VenueOut,
 )
-from .search import WHEN_VALUES, SearchFilters, facets, get_event, resolve_when, search
+from .search import WHEN_VALUES, SearchFilters, facets, get_event, resolve_when, search, venues
 from .security import ask_limiter
 
 router = APIRouter(responses={
@@ -48,6 +51,7 @@ def list_events(
     session: SessionDep,
     q: Annotated[str | None, Query(max_length=200, description="Слова из названия, описания, площадки")] = None,
     city: Annotated[str | None, Query(max_length=64, description="Например, Уфа")] = None,
+    venue: Annotated[str | None, Query(max_length=200, description="Площадка: часть названия, список в /venues")] = None,
     category: Annotated[str | None, Query(max_length=200, description=f"Один или несколько через запятую: {', '.join(CATEGORIES)}")] = None,
     when: Annotated[str | None, Query(max_length=16, description="today | tomorrow | weekend | week")] = None,
     date_from: Annotated[date | None, Query(description="С даты (включительно), ГГГГ-ММ-ДД")] = None,
@@ -80,7 +84,7 @@ def list_events(
         raise HTTPException(422, f"Неизвестная категория: {', '.join(unknown)}. Допустимые: {', '.join(CATEGORIES)}")
 
     filters = SearchFilters(
-        q=q, city=city, category=category, date_from=date_from, date_to=date_to, price_max=price_max,
+        q=q, city=city, venue=venue, category=category, date_from=date_from, date_to=date_to, price_max=price_max,
         free_only=free, age=age, kids=kids, statuses=status, include_past=include_past,
         sort=sort, limit=limit, offset=offset,
     )
@@ -115,6 +119,30 @@ def meta(request: Request, session: SessionDep) -> Response:
         "disclaimer": config.DISCLAIMER,
     }
     return cached_json(request, payload, max_age=TTL_DIRECTORY)
+
+
+@router.get("/cities", response_model=list[CityOut], summary="Города с числом событий", tags=["Справочники"])
+def cities(request: Request, session: SessionDep) -> Response:
+    return cached_json(request, facets(session)["cities"], max_age=TTL_DIRECTORY)
+
+
+@router.get("/categories", response_model=list[CategoryOut], summary="Категории с числом событий", tags=["Справочники"])
+def categories(request: Request, session: SessionDep) -> Response:
+    counts = {c["slug"]: c["count"] for c in facets(session)["categories"]}
+    return cached_json(request, [{"slug": s, "label": label, "count": counts.get(s, 0)} for s, label in CATEGORIES.items()],
+                       max_age=TTL_DIRECTORY)
+
+
+@router.get("/venues", response_model=list[VenueOut], summary="Площадки с числом событий", tags=["Справочники"])
+def venue_directory(
+    request: Request,
+    session: SessionDep,
+    city: Annotated[str | None, Query(max_length=64, description="Только площадки этого города")] = None,
+    q: Annotated[str | None, Query(max_length=200, description="Часть названия площадки")] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+) -> Response:
+    """Название из этого списка передаётся в `GET /events?venue=`. Написания одной площадки в разных источниках объединены."""
+    return cached_json(request, venues(session, city=city, q=q, limit=limit), max_age=TTL_DIRECTORY)
 
 
 @router.get("/health", tags=["Служебное"], summary="Проверка работоспособности")
