@@ -83,7 +83,7 @@
         if (e.is_demo) badge += '<span class="b">демо</span>';
         var place = [e.venue, e.city].filter(Boolean).join(', ');
         return '<li><div class="t">' + title + badge + '</div><div class="m">' + esc(when(e)) +
-          (place ? ' · ' + esc(place) : '') + ' · ' + esc(e.price_text) + (Number(e.age_limit) > 0 ? ' · ' + Number(e.age_limit) + '+' : '') + '</div></li>';
+          (place ? ' · ' + esc(place) : '') + ' · ' + esc(e.price_text) + (e.age_limit !== null && e.age_limit !== undefined ? ' · ' + Number(e.age_limit) + '+' : '') + '</div></li>';
       }).join('') + '</ul><div class="f"><a href="' + esc(origin) + '/" target="_blank" rel="noopener">Вся афиша →</a></div>' +
         '<div class="n">' + esc(cfg.disclaimer || DISCLAIMER) + '</div>';
     })

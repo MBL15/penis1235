@@ -1,4 +1,4 @@
-# В образ попадают только app/, data/sample_events.json, deploy/entrypoint.sh и requirements.txt (см. Dockerfile).
+# В образ попадают только app/, alembic.ini, migrations/, data/sample_events.json, deploy/entrypoint.sh и requirements.txt (см. Dockerfile).
 # Всё остальное в контекст сборки не отправляется: секреты, базы, окружение разработчика.
 .git
 .venv

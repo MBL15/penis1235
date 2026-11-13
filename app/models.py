@@ -33,7 +33,7 @@ class Event(Base):
     lon: Mapped[float | None] = mapped_column(Float, nullable=True)
     price_min: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0 = бесплатно, None = неизвестно
     price_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    age_limit: Mapped[int] = mapped_column(Integer, default=0)
+    age_limit: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)  # None = «не указан», 0 = «0+»
     kids_friendly: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     url: Mapped[str] = mapped_column(String(500), default="")
     image_url: Mapped[str] = mapped_column(String(500), default="")

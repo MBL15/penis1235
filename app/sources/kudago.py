@@ -72,7 +72,7 @@ def to_records(item: dict, *, city: str, today: date | None = None) -> list[dict
         "address": clean_text(place.get("address"), 300),
         "price_min": low,
         "price_max": high,
-        "age_limit": parse_age(item.get("age_restriction")) or None,
+        "age_limit": parse_age(item.get("age_restriction")),
         "image_url": image if str(image).startswith("https://") else "",
         "source": SOURCE_NAME,
         "source_url": item.get("site_url") or "",

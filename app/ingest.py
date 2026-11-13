@@ -27,6 +27,7 @@ from .normalize import (
     find_city_in_text,
     is_kids_text,
     norm_text,
+    merge_age,
     parse_age,
 )
 from .schemas import EventIn
@@ -88,7 +89,7 @@ def _merge(event: Event, data: EventIn, *, category: str, age: int, kids: bool, 
             highs = [p for p in (event.price_max, data.price_max) if p is not None]
             put("price_max", max(highs) if highs else None)
 
-    put("age_limit", age if same_source else max(event.age_limit or 0, age))
+    put("age_limit", age if same_source and age is not None else merge_age(event.age_limit, age))
     put("kids_friendly", kids if same_source else (bool(event.kids_friendly) or kids))
 
     if event.category == "other" and category != "other":
@@ -212,7 +213,7 @@ def merge_events(session: Session, keep: Event, drop: Event, *, actor: str = "sy
         keep.price_min = min(keep.price_min, drop.price_min)
         highs = [p for p in (keep.price_max, drop.price_max) if p is not None]
         keep.price_max = max(highs) if highs else None
-    keep.age_limit = max(keep.age_limit or 0, drop.age_limit or 0)
+    keep.age_limit = merge_age(keep.age_limit, drop.age_limit)
     keep.kids_friendly = bool(keep.kids_friendly or drop.kids_friendly)
     if keep.category == "other" and drop.category != "other":
         keep.category = drop.category

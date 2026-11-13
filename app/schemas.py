@@ -127,7 +127,7 @@ class EventOut(BaseModel):
     price_max: int | None
     price_text: str
     is_free: bool
-    age_limit: int
+    age_limit: int | None = Field(None, description="возрастное ограничение; null — источник не указал")
     kids_friendly: bool
     url: str
     image_url: str

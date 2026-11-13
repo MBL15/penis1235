@@ -89,10 +89,42 @@ def _backfill_derived(conn) -> int:
     return changed
 
 
+def run_migrations(bind: Engine, *, fresh: bool = False) -> str:
+    """Приводит схему к последней версии (Alembic). Возвращает, что сделано: «created», «stamped» или «upgraded».
+
+    Новая база (fresh) уже создана целиком из моделей и помечается последней версией. База, созданная до появления
+    миграций, помечается исходной версией 0001 и мигрирует дальше. Повторный запуск ничего не ломает."""
+    from alembic import command
+    from alembic.config import Config
+
+    from pathlib import Path
+
+    inspector = inspect(bind)
+    cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    cfg.set_main_option("script_location", str(Path(__file__).resolve().parent.parent / "migrations"))
+    with bind.begin() as connection:
+        cfg.attributes["connection"] = connection
+        if fresh:
+            command.stamp(cfg, "head")
+            return "created"
+        if not inspector.has_table("alembic_version"):
+            command.stamp(cfg, "0001")
+            result = "stamped"
+        else:
+            result = "upgraded"
+        command.upgrade(cfg, "head")
+        return result
+
+
 def init_db() -> None:
-    Base.metadata.create_all(engine)
+    if engine.url.drivername.startswith("sqlite") and engine.url.database in (None, "", ":memory:"):
+        Base.metadata.create_all(engine)  # тесты и временные базы: миграции не нужны
+        return
+    fresh = not inspect(engine).has_table("events")
+    Base.metadata.create_all(engine)  # новая база целиком; в старой появятся только недостающие таблицы
     for name in add_missing_columns(engine):
         log.info("В базу добавлен столбец %s", name)
+    log.info("Миграции схемы: %s", run_migrations(engine, fresh=fresh))
     filled = backfill_defaults(engine)
     if filled:
         log.info("Заполнены значения новых столбцов у %d событий", filled)

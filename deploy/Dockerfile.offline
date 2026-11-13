@@ -9,6 +9,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --no-index --find-links /wheels -r requirements.txt && rm -rf /wheels \
     && useradd --uid 1000 --no-create-home --shell /usr/sbin/nologin afisha
 COPY app app
+COPY alembic.ini alembic.ini
+COPY migrations migrations
 COPY data/venues.json data/venues.json
 USER 1000
 CMD ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1", "--no-server-header", "--no-access-log"]

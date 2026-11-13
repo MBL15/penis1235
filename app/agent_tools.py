@@ -203,7 +203,7 @@ def event_for_tool(event: Event, *, full: bool = False) -> tuple[dict, bool]:
         "city": event.city,
         "venue": event.venue,
         "price": price_text(event),
-        "age": f"{event.age_limit}+" if event.age_limit else "0+",
+        "age": f"{event.age_limit}+" if event.age_limit is not None else "не указан",
         "status": event.status,
         "status_label": STATUSES.get(event.status, event.status),
         "kids_friendly": bool(event.kids_friendly),

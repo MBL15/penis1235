@@ -21,7 +21,7 @@ def test_normalize_helpers():
     assert canonical_category(None, "Джазовый вечер") == "concert"
     assert canonical_category("что-то", "ничего") == "other"
     assert parse_age("12+") == 12
-    assert parse_age(None) == 0
+    assert parse_age(None) is None and parse_age("0+") == 0 and parse_age("без ограничений") is None
     assert title_key("Спектакль «Золотой ключик»") == title_key("Золотой ключик")
 
 

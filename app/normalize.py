@@ -169,14 +169,21 @@ def canonical_category(value: str | None, fallback_text: str = "") -> str:
     return guess_category(fallback_text) or "other"
 
 
-def parse_age(value) -> int:
-    """12, "12+", "от 6 лет" → 12 / 12 / 6. Пусто → 0."""
-    if value is None or value == "":
-        return 0
+def parse_age(value) -> int | None:
+    """12, "12+", "от 6 лет" → 12 / 12 / 6. Пусто или нет числа → None («не указан»); явное «0+» → 0."""
+    if value is None or isinstance(value, bool) or value == "":
+        return None
     if isinstance(value, int):
         return max(value, 0)
     match = re.search(r"\d+", str(value))
-    return int(match.group()) if match else 0
+    return int(match.group()) if match else None
+
+
+def merge_age(a: int | None, b: int | None) -> int | None:
+    """Возраст при слиянии двух записей: известное побеждает неизвестное, из двух известных берётся строже."""
+    if a is None or b is None:
+        return b if a is None else a
+    return max(a, b)
 
 
 KIDS_STEMS = ("детск", "детям", "детей", "дети", "детьм", "детиш", "ребен", "малыш", "кукол", "семейн")

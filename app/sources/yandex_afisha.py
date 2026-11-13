@@ -176,7 +176,7 @@ def parse_event_page(html: str, url: str, *, city: str, today: date | None = Non
     rubric = ((event.get("type") or {}).get("code")) or url.rsplit("/", 2)[-2]
     base["category"] = RUBRIC_CATEGORY.get(rubric) or canonical_category(None, base["title"])
     age = parse_age(event.get("contentRating"))
-    if age:
+    if age is not None:
         base["age_limit"] = age
     plan = schedule(state)
     starts = session_starts(plan, today)

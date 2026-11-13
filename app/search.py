@@ -138,7 +138,8 @@ def _conditions(f: SearchFilters, now: datetime) -> list:
         conds.append(Event.id.not_in(f.exclude_ids))
 
     if f.age is not None:
-        conds.append(Event.age_limit <= f.age)
+        # Возраст события неизвестен: подходящим ребёнку считаем только явно детское. Иначе «Макбет» попадёт к восьмилетнему.
+        conds.append(or_(Event.age_limit <= f.age, and_(Event.age_limit.is_(None), Event.kids_friendly.is_(True))))
     if f.kids:
         conds.append(Event.kids_friendly.is_(True))
 

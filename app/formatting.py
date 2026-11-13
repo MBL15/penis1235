@@ -103,7 +103,7 @@ def event_to_out(event: Event, now: datetime | None = None) -> EventOut:
         price_max=event.price_max,
         price_text=price_text(event),
         is_free=is_free(event),
-        age_limit=event.age_limit or 0,
+        age_limit=event.age_limit,
         kids_friendly=bool(event.kids_friendly),
         url=event.url or "",
         image_url=event.image_url or "",
@@ -129,8 +129,7 @@ def render_event(event: Event, *, html: bool = False, details: bool = False) -> 
     if place:
         lines.append(f"📍 {esc(place)}")
     meta = [price_text(event)]
-    if event.age_limit:
-        meta.append(f"{event.age_limit}+")
+    meta.append(f"{event.age_limit}+" if event.age_limit is not None else "возраст не указан")
     if event.status != "scheduled":
         meta.append(STATUSES.get(event.status, event.status))
     lines.append("💳 " + esc(" · ".join(meta)))

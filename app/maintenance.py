@@ -6,10 +6,13 @@
   python -m app.maintenance demo-reset --apply  # удалить их; реальные события не трогаются
   python -m app.maintenance venues            # сколько площадок получат другой ключ после правки data/venues.json
   python -m app.maintenance venues --apply    # пересчитать ключи площадок у всех событий
+  python -m app.maintenance ages              # события, у которых возраст 0 только потому, что источник его не указал
+  python -m app.maintenance ages --apply      # заменить такой 0 на «не указан»; явное «0+» в тексте остаётся 0
   python -m app.maintenance reprocess [--source kassir.ru]          # сколько сырых записей будет переиграно
   python -m app.maintenance reprocess [--source kassir.ru] --apply  # переиграть нормализацию и слияние без нового сбора
 """
 import argparse
+import re
 import sys
 
 from sqlalchemy import select
@@ -46,6 +49,25 @@ def fix_series(session: Session, *, apply: bool = False) -> list[Event]:
     return events
 
 
+_EXPLICIT_ZERO = re.compile(r"(?<!\d)0\s*\+")
+
+
+def find_unknown_ages(session: Session) -> list[Event]:
+    """События с age_limit = 0, у которых «0+» нигде не написано. До версии с «возраст не указан» 0 значило и то и другое,
+    так что настоящие «0+» остаются только там, где это видно из текста карточки."""
+    return [e for e in session.scalars(select(Event).where(Event.age_limit == 0))
+            if not _EXPLICIT_ZERO.search(f"{e.title} {e.description or ''}")]
+
+
+def fix_ages(session: Session, *, apply: bool = False) -> list[Event]:
+    events = find_unknown_ages(session)
+    if apply:
+        for event in events:
+            event.age_limit = None
+        session.commit()
+    return events
+
+
 def reset_demo(session: Session) -> int:
     """Удаляет только демо-события (все источники начинаются с «demo»); реальные данные не трогает."""
     removed = 0
@@ -60,7 +82,7 @@ def reset_demo(session: Session) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Служебные операции с базой")
-    parser.add_argument("task", choices=["series", "demo-reset", "reprocess", "venues"])
+    parser.add_argument("task", choices=["series", "demo-reset", "reprocess", "venues", "ages"])
     parser.add_argument("--apply", action="store_true", help="записать изменения (без флага только показывает)")
     parser.add_argument("--source", help="reprocess: только записи этого источника")
     args = parser.parse_args(argv)
@@ -84,6 +106,12 @@ def main(argv: list[str] | None = None) -> int:
                 session.commit()
         verb = "пересчитан" if args.apply else "изменится (запустите с --apply)"
         print(f"Ключ площадки {verb} у событий: {len(stale)}")
+        return 0
+    if args.task == "ages":
+        with SessionLocal() as session:
+            events = fix_ages(session, apply=args.apply)
+        verb = "заменён на «не указан»" if args.apply else "станет «не указан» (запустите с --apply)"
+        print(f"Возраст {verb} у событий: {len(events)}")
         return 0
     if args.task == "reprocess":
         from sqlalchemy import func

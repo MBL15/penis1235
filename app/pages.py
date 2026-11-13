@@ -113,7 +113,7 @@ def render_event_page(event: Event, now: datetime | None = None) -> str:
     chips = [f'<span class="{CHIP}">{esc(category)}</span>']
     if is_free(event):
         chips.append(f'<span class="{CHIP}">Бесплатно</span>')
-    if event.age_limit:
+    if event.age_limit is not None:
         chips.append(f'<span class="{CHIP}">{int(event.age_limit)}+</span>')
     if event.kids_friendly:
         chips.append(f'<span class="{CHIP}">Детям и семьям</span>')
@@ -131,8 +131,7 @@ def render_event_page(event: Event, now: datetime | None = None) -> str:
     if event.language in LANGUAGES:
         facts.append(_row("Язык", esc(LANGUAGES[event.language])))
     facts.append(_row("Цена", esc(price)))
-    if event.age_limit:
-        facts.append(_row("Возраст", f"{int(event.age_limit)}+"))
+    facts.append(_row("Возраст", f"{int(event.age_limit)}+" if event.age_limit is not None else "не указан"))
     facts.append(_row("Статус", esc(status)))
 
     description = (

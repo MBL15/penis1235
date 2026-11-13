@@ -140,7 +140,7 @@
     const title = `<a class="${linkClass}" href="/event/${Number(event.id) || 0}">${esc(event.title)}</a>`;
     const pills = [];
     if (!event.is_free) pills.push(`<span class="${PILL} ${PILL_TONE.price}">${esc(event.price_text)}</span>`);
-    if (Number(event.age_limit) > 0) pills.push(`<span class="${PILL} ${PILL_TONE.plain}">${Number(event.age_limit)}+</span>`);
+    if (event.age_limit !== null && event.age_limit !== undefined) pills.push(`<span class="${PILL} ${PILL_TONE.plain}">${Number(event.age_limit)}+</span>`);
     if (event.source_count > 1) {
       pills.push(`<span class="${PILL} ${PILL_TONE.verified}" title="${esc((event.sources || []).map((s) => s.name).join(', '))}">✓ ${Number(event.source_count) || 0} источника</span>`);
     }
