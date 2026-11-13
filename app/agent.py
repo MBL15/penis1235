@@ -186,6 +186,36 @@ def _clean_args(args: dict) -> dict:
     return {k: int(v) if isinstance(v, float) and v.is_integer() else v for k, v in args.items()}
 
 
+_cooldown: dict[str, float] = {}  # модель -> до какого момента (monotonic) её не трогаем
+SWITCH_CODES = (404, 429, 500, 502, 503, 504)  # квота, перегрузка, модель закрыта: можно попробовать другую
+
+
+def _model_chain() -> list[str]:
+    chain = [config.GEMINI_MODEL] + [m for m in config.GEMINI_FALLBACK_MODELS if m != config.GEMINI_MODEL]
+    now = time.monotonic()
+    ready = [m for m in chain if _cooldown.get(m, 0) <= now]
+    return ready or chain[:1]  # все на паузе: всё равно пробуем основную, пауза не должна делать сервис немым
+
+
+def _generate(client, contents, settings, trace: TraceBuilder):
+    """Один вызов модели. Квота у каждой модели Gemini своя: на 429/503/404 пробуем следующую и запоминаем, что эта недоступна."""
+    last: Exception | None = None
+    for model in _model_chain():
+        try:
+            response = client.models.generate_content(model=model, contents=contents, config=settings)
+        except Exception as exc:
+            if getattr(exc, "code", None) not in SWITCH_CODES:
+                raise
+            last = exc
+            _cooldown[model] = time.monotonic() + config.GEMINI_COOLDOWN_SECONDS
+            trace.flag("model_skipped", ", ".join(filter(None, [str(trace.flags.get("model_skipped", "")), f"{model} ({exc.code})"])))
+            log.warning("Модель %s недоступна (%s), пробую следующую", model, getattr(exc, "code", "?"))
+            continue
+        trace.model = model
+        return response
+    raise last  # type: ignore[misc]
+
+
 def _usage(response) -> tuple[int, int]:
     """Токены ответа Gemini: (входные, выходные). Размышления модели оплачиваются как выходные."""
     usage = getattr(response, "usage_metadata", None)
@@ -227,7 +257,7 @@ def _gemini_ask(session: Session, message: str, history: list[dict], client, now
         for _ in range(MAX_STEPS):
             if time.monotonic() > deadline:  # запрос не должен держать поток сервера минутами
                 raise AgentError("превышено время на ответ")
-            response = client.models.generate_content(model=config.GEMINI_MODEL, contents=contents, config=settings)
+            response = _generate(client, contents, settings, trace)
             trace.add_usage(*_usage(response))
             candidate = response.candidates[0] if response.candidates else None
             feedback = getattr(response, "prompt_feedback", None)

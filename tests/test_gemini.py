@@ -48,6 +48,44 @@ def final(reply, ids, clarify=False, fenced=False):
 @pytest.fixture(autouse=True)
 def gemini_mode(monkeypatch):
     monkeypatch.setattr(config, "AGENT_MODE", "llm")
+    agent._cooldown.clear()
+    yield
+    agent._cooldown.clear()
+
+
+class ApiError(Exception):
+    """Как ошибка SDK Google: код ответа в поле code."""
+
+    def __init__(self, code, text=""):
+        super().__init__(f"{code} {text}")
+        self.code = code
+
+
+def test_quota_on_the_main_model_switches_to_the_next_one_and_remembers_it(session, seeded, monkeypatch):
+    monkeypatch.setattr(config, "GEMINI_MODEL", "main")
+    monkeypatch.setattr(config, "GEMINI_FALLBACK_MODELS", ["lite", "lite2"])
+    client = FakeGemini(ApiError(429, "RESOURCE_EXHAUSTED"), final("Есть балет.", []), final("И снова балет.", []))
+    result = agent.ask(session, "что в воскресенье", client=client, now=NOW)
+    assert (result.mode, result.provider) == ("llm", "gemini") and result.reply == "Есть балет."
+    assert [c["model"] for c in client.calls] == ["main", "lite"]
+    from app.tracing import get_trace
+    trace = get_trace(session, result.trace_id)
+    assert trace.model == "lite" and "main (429)" in trace.flags["model_skipped"]
+    # основная на паузе: следующий вопрос сразу идёт на запасную, без лишнего обращения
+    again = agent.ask(session, "а в субботу", client=client, now=NOW)
+    assert again.mode == "llm" and [c["model"] for c in client.calls][-1] == "lite" and len(client.calls) == 3
+
+
+def test_every_model_unavailable_falls_back_to_rules_and_other_errors_do_not_switch(session, seeded, monkeypatch):
+    monkeypatch.setattr(config, "GEMINI_MODEL", "main")
+    monkeypatch.setattr(config, "GEMINI_FALLBACK_MODELS", ["lite"])
+    client = FakeGemini(ApiError(503, "UNAVAILABLE"), ApiError(429, "RESOURCE_EXHAUSTED"))
+    result = agent.ask(session, "концерты в воскресенье", client=client, now=NOW)
+    assert result.mode == "rules" and len(client.calls) == 2
+    agent._cooldown.clear()
+    client = FakeGemini(ApiError(400, "INVALID_ARGUMENT"))
+    assert agent.ask(session, "концерты в воскресенье", client=client, now=NOW).mode == "rules"
+    assert len(client.calls) == 1  # ошибка запроса не лечится сменой модели
 
 
 @pytest.fixture

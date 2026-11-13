@@ -79,6 +79,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", "")
 # Быстрая модель с вызовом функций. Старые (2.5) закрыты для новых ключей, алиас -latest тоже доступен не всем (404);
 # список моделей своего ключа: client.models.list().
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+# Запасные модели через запятую: если основная вернула 429 (квота у каждой модели своя), 503 или 404, берётся следующая.
+GEMINI_FALLBACK_MODELS = [m.strip() for m in os.getenv("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash-lite,gemini-3.1-flash-lite").split(",") if m.strip()]
+# Сколько секунд не трогать модель после отказа по квоте или перегрузке (суточная квота сбрасывается раз в сутки, поэтому не гоняем её зря).
+GEMINI_COOLDOWN_SECONDS = int(os.getenv("GEMINI_COOLDOWN_SECONDS", "600"))
 
 # Башкортостан живёт по UTC+5 без перехода на летнее время, поэтому фиксированного сдвига достаточно.
 LOCAL_TZ = timezone(timedelta(hours=5))
