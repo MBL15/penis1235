@@ -1,6 +1,7 @@
 [
   {"name": "culture-ru", "source": "culture-ru", "every_hours": 24, "args": {"pages": 10}},
-  {"name": "yandex-afisha", "source": "yandex-afisha", "every_hours": 24, "args": {"limit": 150, "cities": "ufa"}},
-  {"name": "kassir", "source": "kassir", "every_hours": 12, "args": {"cities": "ufa"}, "mark_vanished": true},
+  {"name": "yandex-afisha", "source": "yandex-afisha", "every_hours": 24, "args": {"limit": 600, "cities": "ufa,sterlitamak,salavat,neftekamsk,oktyabrskiy,sibay,beloretsk,kumertau,meleuz,ishimbay,tuymazy,birsk"}},
+  {"name": "kassir", "source": "kassir", "every_hours": 12, "args": {"cities": "ufa,sterlitamak,neftekamsk,salavat,sibay,oktyabrskiy"}, "mark_vanished": true},
+  {"name": "afisha-cinema", "source": "afisha-cinema", "every_hours": 12, "args": {"cities": "ufa,sterlitamak,neftekamsk,oktyabrskij,kumertau,birsk,uchaly", "days": 3, "delay": 1.5}},
   {"name": "verify", "kind": "verify", "every_hours": 6, "links": true, "args": {"stale_days": 14, "limit": 200}}
 ]

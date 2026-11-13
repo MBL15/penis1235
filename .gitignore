@@ -17,3 +17,6 @@ wheels/
 
 # кеш списка адресов Яндекс Афиши: создаётся при синхронизации
 data/yandex_afisha_urls.json
+
+# локальные настройки Claude Code
+.claude/

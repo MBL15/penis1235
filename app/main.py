@@ -140,6 +140,14 @@ def account_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "account.html", headers={"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-cache"})
 
 
+@app.get("/cinema", include_in_schema=False)
+def cinema_page(request: Request, session: SessionDep) -> Response:
+    """Кино: фильмы дня, кинотеатры и время сеансов. День и город в адресной строке, страница работает без JavaScript."""
+    from .cinema_page import build_page
+
+    return cached_html(request, build_page(session, request.query_params), max_age=60)
+
+
 @app.get("/plan", include_in_schema=False)
 def plan_page(request: Request, session: SessionDep) -> Response:
     """Планировщик «Выходной день»: форма и результат на одной странице; параметры в адресной строке, ссылкой можно поделиться."""

@@ -34,8 +34,9 @@ WEBAPP_URL = os.getenv("WEBAPP_URL") or (PUBLIC_URL if PUBLIC_URL.startswith("ht
 TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY", "")
 
 # Обязательная подписка на канал для пользования ботом (бот должен быть администратором канала, иначе Telegram не
-# покажет ему список подписчиков). Пустое значение отключает проверку.
-REQUIRED_CHANNEL = os.getenv("REQUIRED_CHANNEL", "@sz_orenteam").strip()
+# покажет ему список подписчиков). По умолчанию выключено: в ТЗ такого условия нет, а оно удлиняет путь до результата.
+# Включить: REQUIRED_CHANNEL=@sz_orenteam в .env.
+REQUIRED_CHANNEL = os.getenv("REQUIRED_CHANNEL", "").strip()
 REQUIRED_CHANNEL_TITLE = os.getenv("REQUIRED_CHANNEL_TITLE", "SpaceZ").strip()
 
 # Сервис стоит за прокси/платформой (Render, Railway, nginx): лимит запросов считаем по X-Forwarded-For, а не по адресу прокси.

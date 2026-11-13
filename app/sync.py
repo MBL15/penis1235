@@ -4,6 +4,7 @@
   python -m app.sync yandex-afisha --limit 150      # Яндекс Афиша (страницы событий по sitemap)
   python -m app.sync kassir                         # Kassir.ru: разделы афиши города
   python -m app.sync kudago                         # KudaGo (официальный API; из России бывает недоступен)
+  python -m app.sync afisha-cinema --days 3         # кино на Афише (afisha.ru): кинотеатры города и их сеансы
   python -m app.sync sites                          # сайты из data/sources.json (schema.org)
   python -m app.sync all --limit 100                # все источники подряд, сбой одного не останавливает остальные
   python -m app.sync all --dry-run                  # показать, что загрузится, ничего не записывая
@@ -20,10 +21,10 @@ from collections.abc import Callable, Iterable
 
 from .pipeline import process_record
 from .verify import verify_pending
-from .sources import culture_ru, kassir, kudago, sites, yandex_afisha
+from .sources import afisha_cinema, culture_ru, kassir, kudago, sites, yandex_afisha
 from .sources.base import BlockedError, SourceError
 
-SOURCES = ("culture-ru", "yandex-afisha", "kassir", "kudago", "sites")
+SOURCES = ("culture-ru", "yandex-afisha", "kassir", "kudago", "afisha-cinema", "sites")
 
 
 def sync_records(session, records, *, actor: str = "sync", queue: bool = False) -> dict[str, int]:
@@ -51,6 +52,9 @@ def producers(args) -> dict[str, Callable[[], Iterable[dict]]]:
         "yandex-afisha": lambda: yandex_afisha.fetch_records(args.limit, cities=cities or None),
         "kassir": lambda: kassir.fetch_records(cities={s: kassir.CITIES[s] for s in args.cities.split(",") if s in kassir.CITIES} or None),
         "kudago": lambda: kudago.fetch_records(locations={s: kudago.LOCATIONS[s] for s in args.cities.split(",") if s in kudago.LOCATIONS} or None),
+        "afisha-cinema": lambda: afisha_cinema.fetch_records(
+            cities={s.strip(): afisha_cinema.CITY_SLUGS[s.strip()] for s in args.cities.split(",") if s.strip() in afisha_cinema.CITY_SLUGS} or None,
+            days=getattr(args, "days", 3)),
         "sites": lambda: sites.fetch_records(),
     }
 
@@ -61,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pages", type=int, default=10, help="culture.ru: сколько страниц афиши обойти (по 20 событий)")
     parser.add_argument("--limit", type=int, default=150, help="Яндекс Афиша: сколько страниц событий обойти за запуск")
     parser.add_argument("--cities", default="ufa", help="города через запятую (ufa,sterlitamak,...)")
+    parser.add_argument("--days", type=int, default=3, help="кино на Афише: на сколько дней вперёд брать расписание (включая сегодня)")
     parser.add_argument("--delay", type=float, default=1.5, help="culture.ru: пауза между страницами, секунд")
     parser.add_argument("--dry-run", action="store_true", help="ничего не записывать, показать первые записи")
     parser.add_argument("--drop-demo", action="store_true", help="удалить демо-события перед загрузкой")

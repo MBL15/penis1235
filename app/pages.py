@@ -44,7 +44,8 @@ def _https(url: str | None) -> str:
     return url if url.lower().startswith(("http://", "https://")) else ""
 
 
-def _layout(title: str, description: str, body: str, *, path: str = "", image: str = "", robots: str = "") -> str:
+def _layout(title: str, description: str, body: str, *, path: str = "", image: str = "", robots: str = "", wide: bool = False) -> str:
+    width = "max-w-[1100px]" if wide else "max-w-[820px]"
     canonical = f"{config.PUBLIC_URL}{path}" if path else ""
     meta = [f'<meta name="description" content="{esc(description)}">',
             f'<meta property="og:title" content="{esc(title)}">',
@@ -68,12 +69,13 @@ def _layout(title: str, description: str, body: str, *, path: str = "", image: s
   <link rel="stylesheet" href="/static/ui.css">
 </head>
 <body class="min-h-screen bg-art bg-[#eef2fb] bg-fixed text-ink antialiased">
-  <header class="mx-auto flex max-w-[820px] items-center justify-between gap-3 px-4 pt-4">
+  <header class="mx-auto flex {width} items-center justify-between gap-3 px-4 pt-4">
     <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-white">← К афише</a>
-    <nav class="flex items-center gap-1"><a href="/account" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink">Кабинет</a>
+    <nav class="flex items-center gap-1"><a href="/cinema" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink">Кино</a>
+    <a href="/account" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink">Кабинет</a>
     <a href="/docs" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink w600:hidden">API</a></nav>
   </header>
-  <main class="mx-auto max-w-[820px] px-4 pb-12 pt-5">
+  <main class="mx-auto {width} px-4 pb-12 pt-5">
 {body}
     <p class="mx-auto mt-6 max-w-[780px] text-center text-[.85rem] text-ink-3">{esc(config.DISCLAIMER)}</p>
   </main>

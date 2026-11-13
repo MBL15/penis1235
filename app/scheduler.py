@@ -45,7 +45,7 @@ class Job:
     kind: str = "sync"
     source: str = ""
     every_hours: float = 24.0
-    args: dict = field(default_factory=dict)  # pages, limit, cities, delay для источника
+    args: dict = field(default_factory=dict)  # pages, limit, cities, delay, days для источника
     mark_vanished: bool = False
     links: bool = True  # проверять ссылки при проверке карточек
 
@@ -106,7 +106,7 @@ def _fetch_source(job: Job) -> list[dict]:
     from .sync import producers
 
     args = Namespace(pages=int(job.args.get("pages", 10)), limit=int(job.args.get("limit", 150)), cities=str(job.args.get("cities", "ufa")),
-                     delay=float(job.args.get("delay", 1.5)))
+                     delay=float(job.args.get("delay", 1.5)), days=int(job.args.get("days", 3)))
     return list(producers(args)[job.source]())
 
 

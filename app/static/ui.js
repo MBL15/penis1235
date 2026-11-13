@@ -133,6 +133,12 @@
     document.querySelectorAll('[data-rise]').forEach((node, index) => { node.style.setProperty('--i', String(index)); node.classList.add('ui-rise'); });
   }
 
+  // Картинка, которая не загрузилась (data-hide-on-error), убирается: под ней остаётся запасная иконка.
+  document.addEventListener('error', (event) => {
+    const img = event.target;
+    if (img && img.tagName === 'IMG' && img.hasAttribute('data-hide-on-error')) img.remove();
+  }, true);
+
   window.ui = { toast, busy };
   const start = () => { mountNav(); stagger(); openChatFromLink(); root.classList.add('ui-ready'); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
