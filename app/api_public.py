@@ -1,5 +1,5 @@
 """Открытая часть REST API: чтение афиши, справочники, вопрос ИИ-помощнику. Подключается дважды: /api/v1 и /api (старые пути)."""
-from datetime import date, time
+from datetime import date, time, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, Response
@@ -45,6 +45,9 @@ from .schemas import (
     IngestResult,
     RejectedRecord,
     StatusPatch,
+    PlanIn,
+    PlanItemOut,
+    PlanOut,
     SubscriptionIn,
     SubscriptionOut,
     TraceOut,
@@ -52,6 +55,7 @@ from .schemas import (
 )
 from .tracing import get_trace
 from .hints import empty_hint
+from .planner import PlanRequest, plan_weekend
 from .search import WHEN_VALUES, SearchFilters, facets, get_event, resolve_when, search, venues
 from .security import RateLimiter, ask_limiter
 from .telegram_auth import validate_init_data
@@ -235,6 +239,37 @@ def patch_status(event_id: Annotated[int, Path(ge=1, le=2**31 - 1)], payload: St
     audit.record(session, actor, "status", event.id, audit.diff(before, audit.snapshot(event)))
     session.commit()
     return event_to_out(event)
+
+
+# ---------- планировщик «Выходной день» (ТЗ §6.5) ----------
+
+@router.post("/plan", response_model=PlanOut, tags=["Планировщик"], summary="План дня из 2–4 событий",
+             responses={422: {"model": ErrorOut}})
+def plan_day(payload: PlanIn, session: SessionDep) -> PlanOut:
+    """Собирает из афиши 2–4 события одного дня без пересечений по времени: с оценкой дороги и общей стоимостью. Если ограничения
+    несовместимы, `feasible` = false, а `message` и `suggestions` говорят, что мешает и что изменить. Модель не вызывается."""
+    today = now_local().date()
+    if not today <= payload.day <= today + timedelta(days=90):
+        raise HTTPException(422, "Планировать можно на день от сегодняшнего до 90 дней вперёд")
+    city = canonical_city(payload.city) if payload.city else None
+    if payload.city and (not city or city not in {c["name"] for c in facets(session)["cities"]}):
+        raise HTTPException(422, f"Такого города нет в афише: «{payload.city[:40]}». Список: GET /api/v1/cities")
+    category = canonical_category(payload.category) if payload.category else None
+    if payload.category and category == "other" and norm_text(payload.category) not in ("other", "другое"):
+        raise HTTPException(422, f"Неизвестная категория: {payload.category[:40]}. Допустимые: {', '.join(CATEGORIES)}")
+    request = PlanRequest(
+        day=payload.day, window_from=_hhmm(payload.window_from), window_to=_hhmm(payload.window_to), budget=payload.budget,
+        adults=payload.adults, children=payload.children, city=city, max_travel_min=payload.max_travel_min,
+        events=payload.events, category=category)
+    if request.window_from >= request.window_to:
+        raise HTTPException(422, "Окно времени: «с» должно быть раньше «по»")
+    now = now_local()
+    result = plan_weekend(session, request, now)
+    return PlanOut(
+        feasible=result.feasible, message=result.message, suggestions=result.suggestions, constraints=request.describe(),
+        requested_events=request.events, total_cost=result.total_cost, total_travel_min=result.total_travel_min,
+        items=[PlanItemOut(event=event_to_out(i.event, now), starts_at=i.start, ends_at=i.end, end_estimated=i.end_estimated,
+                           travel_min=i.travel_min, cost=i.cost, price_known=i.price_known) for i in result.items])
 
 
 # ---------- подписки (ТЗ §6.3) ----------

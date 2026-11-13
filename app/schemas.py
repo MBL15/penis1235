@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -143,6 +143,49 @@ class EventOut(BaseModel):
     verified_at: datetime | None = Field(None, description="когда карточку последний раз проверяли; null — не проверялась")
     confidence: float | None = Field(None, description="уверенность 0–1: ссылка, дата, полнота, число источников")
     review_reason: str | None = Field(None, description="почему карточка в очереди модерации (только у черновиков)")
+
+
+class PlanIn(BaseModel):
+    """Параметры планировщика «Выходной день»."""
+
+    day: date = Field(description="день, на который строится план")
+    window_from: str = Field("10:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="свободное окно: с (ЧЧ:ММ)")
+    window_to: str = Field("22:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="свободное окно: по (ЧЧ:ММ)")
+    budget: int | None = Field(None, ge=0, le=1_000_000, description="бюджет на всех, рублей; пусто — без ограничения")
+    adults: int = Field(1, ge=1, le=10)
+    children: list[int] = Field(default_factory=list, max_length=8, description="возраст каждого ребёнка, лет")
+    city: str | None = Field(None, max_length=64)
+    max_travel_min: int | None = Field(40, ge=0, le=240, description="сколько минут на один переезд; пусто — без ограничения")
+    events: int = Field(3, ge=2, le=4, description="сколько событий хотите (2–4)")
+    category: str | None = Field(None, max_length=32)
+
+    @field_validator("children")
+    @classmethod
+    def _ages(cls, value: list[int]) -> list[int]:
+        if any(not 0 <= age <= 17 for age in value):
+            raise ValueError("возраст ребёнка: от 0 до 17 лет")
+        return value
+
+
+class PlanItemOut(BaseModel):
+    event: "EventOut"
+    starts_at: datetime
+    ends_at: datetime
+    end_estimated: bool = Field(description="окончание оценено по типичной длительности: источник его не сообщил")
+    travel_min: int = Field(description="оценка дороги от предыдущего события, минут; у первого 0")
+    cost: int = Field(description="стоимость на всех, рублей")
+    price_known: bool
+
+
+class PlanOut(BaseModel):
+    feasible: bool
+    message: str
+    suggestions: list[str] = Field(description="что изменить, чтобы план получился, от самого малого изменения")
+    constraints: list[str]
+    requested_events: int
+    items: list[PlanItemOut]
+    total_cost: int
+    total_travel_min: int
 
 
 class SubscriptionIn(BaseModel):
