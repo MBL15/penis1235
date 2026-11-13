@@ -7,7 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from ..config import now_local
-from ..normalize import canonical_category, find_city_in_text
+from ..normalize import CONTINUOUS_CATEGORIES, canonical_category, find_city_in_text
 from .base import parse_datetime
 
 _LD_SCRIPT = re.compile(r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', re.S | re.I)
@@ -136,8 +136,15 @@ def record_from_ld(
     tz_mode: str = "honor",
     page_url: str = "",
     today: date | None = None,
+    default_category: str | None = None,
+    period_as_series: bool = False,
 ) -> dict | None:
-    """Событие schema.org → запись для app.ingest (формат EventIn). None: нет названия/даты или событие уже прошло."""
+    """Событие schema.org → запись для app.ingest (формат EventIn). None: нет названия/даты или событие уже прошло.
+
+    default_category: категория, если по типам schema.org она не определилась (адаптер знает её по адресу страницы).
+    period_as_series: сайт записывает серию показов как период startDate…endDate (так делает Kassir.ru). Тогда для всех
+    категорий, кроме непрерывных (выставки, экскурсии, фестивали), конец периода уходит в series_until, а start_at остаётся
+    известным показом: серия не должна «идти» каждый день периода."""
     today = today or now_local().date()
     title = clean_text(node.get("name"), 300)
     start = parse_datetime(node.get("startDate"), tz_mode=tz_mode)
@@ -148,22 +155,29 @@ def record_from_ld(
         end = None
     if (end or start).date() < today:
         return None
-    # Многодневное событие, которое уже идёт: началом считаем сегодня (как делает адаптер culture.ru).
-    if end is not None and end.date() > start.date() and start.date() < today:
+
+    types = _types(node)
+    category = next((TYPE_CATEGORY[t] for t in types if t in TYPE_CATEGORY), None) or default_category
+    description = clean_text(node.get("description"), 20_000)
+    if description == title:  # некоторые сервисы кладут в описание само название
+        description = ""
+
+    multi_day = end is not None and end.date() > start.date()
+    series = (
+        period_as_series and multi_day
+        and canonical_category(category, f"{title} {description[:300]}") not in CONTINUOUS_CATEGORIES
+    )
+    # Непрерывное многодневное событие, которое уже идёт: началом считаем сегодня (как делает адаптер culture.ru).
+    if multi_day and not series and start.date() < today:
         start = datetime.combine(today, datetime.min.time())
 
     venue, address, city = place_info(node.get("location"))
     low, high, sold_out = prices_from_offers(node.get("offers"))
     status = STATUS.get(str(node.get("eventStatus", "")).rsplit("/", 1)[-1].lower(), "sold_out" if sold_out else "scheduled")
-    types = _types(node)
-    category = next((TYPE_CATEGORY[t] for t in types if t in TYPE_CATEGORY), None)
     url = str(node.get("url") or page_url or "")
     image = _first(node.get("image"))
     if isinstance(image, dict):
         image = image.get("contentUrl") or image.get("url")
-    description = clean_text(node.get("description"), 20_000)
-    if description == title:  # некоторые сервисы кладут в описание само название
-        description = ""
 
     record = {
         "title": title,
@@ -182,5 +196,5 @@ def record_from_ld(
         "source_url": url,
     }
     if end is not None:
-        record["end_at"] = end.isoformat()
+        record["series_until" if series else "end_at"] = end.isoformat()
     return {k: v for k, v in record.items() if v not in (None, "")}

@@ -32,13 +32,14 @@ def parse_section(html: str, *, city: str, section_url: str, today: date | None 
     """Страница раздела → записи. Время «как написано» (смещение игнорируется), категория по пути ссылки на событие."""
     records = []
     for node in extract_events(html):
-        record = record_from_ld(node, source=SOURCE_NAME, default_city=city, tz_mode="local", page_url=section_url, today=today)
+        path = str(node.get("url") or section_url or "").split("/")[3:4]
+        record = record_from_ld(
+            node, source=SOURCE_NAME, default_city=city, tz_mode="local", page_url=section_url, today=today,
+            default_category=PATH_CATEGORY.get(path[0] if path else ""),
+            period_as_series=True,  # Kassir.ru записывает серию спектаклей или концертов как период «первая дата – последняя»
+        )
         if record is None:
             continue
-        path = record.get("url", "").split("/")[3:4]
-        record.setdefault("category", PATH_CATEGORY.get(path[0] if path else ""))
-        if record.get("category") is None:
-            record.pop("category", None)
         records.append(record)
     return records
 

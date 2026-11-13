@@ -55,7 +55,14 @@
       return 'до ' + new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }).format(end);
     }
     var has = d.getHours() !== 0 || d.getMinutes() !== 0;
-    return dayFmt.format(d) + (has ? ', ' + timeFmt.format(d) : '');
+    var single = dayFmt.format(d) + (has ? ', ' + timeFmt.format(d) : '');
+    var last = e.series_until ? new Date(e.series_until) : null;
+    if (last && last.toDateString() !== d.toDateString()) {
+      // Серия показов: известна дата одного показа, остальные даты источник не сообщает.
+      var until = 'показы до ' + new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }).format(last);
+      return d <= new Date() ? until : single + ' · ' + until;
+    }
+    return single;
   }
 
   var params = new URLSearchParams({ limit: String(Math.min(Math.max(parseInt(cfg.limit, 10) || 5, 1), 20)) });

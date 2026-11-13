@@ -37,8 +37,15 @@ def price_text(event: Event) -> str:
     return f"{lo}–{hi} ₽"
 
 
+def is_series(event: Event) -> bool:
+    """Серия показов: известна дата одного показа и конец серии, остальные даты неизвестны."""
+    return event.series_until is not None and event.series_until.date() > event.start_at.date()
+
+
 def is_past(event: Event, now: datetime | None = None) -> bool:
     now = now or now_local()
+    if is_series(event):
+        return event.series_until < now
     if event.end_at is not None:
         return event.end_at < now
     return event.start_at < now - ONGOING_GRACE
@@ -53,7 +60,14 @@ def when_text(event: Event, now: datetime | None = None) -> str:
         return f"{start.day} {MONTHS_GEN[start.month - 1]} – {end.day} {MONTHS_GEN[end.month - 1]}"
     day = f"{WEEKDAYS[start.weekday()]}, {start.day} {MONTHS_GEN[start.month - 1]}"
     has_time = (start.hour, start.minute) != (0, 0)
-    return f"{day}, {start:%H:%M}" if has_time else day
+    single = f"{day}, {start:%H:%M}" if has_time else day
+    if is_series(event):
+        # Даты между известным показом и концом серии источник не сообщает: так и пишем, ничего не выдумываем.
+        last = event.series_until
+        year = f" {last.year}" if last.year != (now or now_local()).year else ""
+        until = f"показы до {last.day} {MONTHS_GEN[last.month - 1]}{year}"
+        return until if start <= (now or now_local()) else f"{single} · {until}"
+    return single
 
 
 def is_demo(event: Event) -> bool:
@@ -74,6 +88,7 @@ def event_to_out(event: Event, now: datetime | None = None) -> EventOut:
         address=event.address or "",
         start_at=event.start_at,
         end_at=event.end_at,
+        series_until=event.series_until,
         price_min=event.price_min,
         price_max=event.price_max,
         price_text=price_text(event),

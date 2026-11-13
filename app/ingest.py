@@ -58,6 +58,12 @@ def _merge(event: Event, data: EventIn, *, category: str, age: int, kids: bool, 
     fill("url", data.url)
     fill("image_url", data.image_url)
     fill("end_at", data.end_at)
+    if data.series_until is not None:
+        if same_source or event.series_until is None:
+            put("series_until", data.series_until)
+        # Раньше серия записывалась одним длинным интервалом: теперь это серия, интервал снимаем.
+        if same_source and event.end_at is not None and event.end_at == data.series_until:
+            put("end_at", None)
 
     if data.description and (same_source or len(data.description) > len(event.description or "")):
         put("description", data.description)
@@ -126,6 +132,7 @@ def upsert_detailed(session: Session, data: EventIn) -> tuple[Event, str, bool]:
             address=data.address,
             start_at=data.start_at,
             end_at=data.end_at,
+            series_until=data.series_until,
             price_min=data.price_min,
             price_max=data.price_max,
             age_limit=age,
@@ -164,7 +171,7 @@ def merge_events(session: Session, keep: Event, drop: Event) -> Event:
             entry["status"] = src["status"]
     keep.sources = sources
     keep.status = reduce(worse_status, (x["status"] for x in sources), keep.status)
-    for field in ("venue", "address", "url", "image_url", "end_at"):
+    for field in ("venue", "address", "url", "image_url", "end_at", "series_until"):
         if not getattr(keep, field) and getattr(drop, field):
             setattr(keep, field, getattr(drop, field))
     if len(drop.description or "") > len(keep.description or ""):

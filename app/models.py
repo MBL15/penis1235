@@ -24,6 +24,9 @@ class Event(Base):
     address: Mapped[str] = mapped_column(String(300), default="")
     start_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     end_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Серия показов: start_at — известный показ (первый или ближайший), series_until — конец серии. Остальные даты
+    # источник не сообщает, поэтому для поиска по дате серия считается только в день start_at.
+    series_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     price_min: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0 = бесплатно, None = неизвестно
     price_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
     age_limit: Mapped[int] = mapped_column(Integer, default=0)

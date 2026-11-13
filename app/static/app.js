@@ -81,7 +81,15 @@
       return start <= new Date() ? `до ${shortFmt.format(end)}` : `${shortFmt.format(start)} – ${shortFmt.format(end)}`;
     }
     const hasTime = start.getHours() !== 0 || start.getMinutes() !== 0;
-    return hasTime ? `${dayFmt.format(start)}, ${timeFmt.format(start)}` : dayFmt.format(start);
+    const single = hasTime ? `${dayFmt.format(start)}, ${timeFmt.format(start)}` : dayFmt.format(start);
+    // Серия показов: известна дата одного показа, остальные даты источник не сообщает.
+    const last = event.series_until ? new Date(event.series_until) : null;
+    if (last && last.toDateString() !== start.toDateString()) {
+      const year = last.getFullYear() !== new Date().getFullYear() ? ` ${last.getFullYear()}` : '';
+      const until = `показы до ${shortFmt.format(last)}${year}`;
+      return start <= new Date() ? until : `${single} · ${until}`;
+    }
+    return single;
   }
 
   const bentoClass = (index) => ({ 0: 'feature', 6: 'wide' }[index % PAGE] || '');

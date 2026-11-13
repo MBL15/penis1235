@@ -67,6 +67,7 @@ def _conditions(f: SearchFilters, now: datetime) -> list:
             or_(
                 Event.end_at >= now,
                 and_(Event.end_at.is_(None), Event.start_at >= now - ONGOING_GRACE),
+                Event.series_until >= now,  # серия, пока не кончилась; по дате она ищется только в день известного показа
             )
         )
     if f.date_from is not None:
@@ -113,7 +114,9 @@ def search(session: Session, f: SearchFilters, now: datetime | None = None) -> t
         stmt = stmt.order_by(func.coalesce(Event.price_min, 10**9), Event.start_at, Event.id)
     else:
         # Уже идущие многодневные события (выставки) — после разовых, иначе они забивают начало афиши.
-        ongoing = case((and_(Event.start_at < now, Event.end_at.is_not(None)), 1), else_=0)
+        ongoing = case(
+            (and_(Event.start_at < now, or_(Event.end_at.is_not(None), Event.series_until.is_not(None))), 1), else_=0
+        )
         stmt = stmt.order_by(ongoing, Event.start_at, Event.id)
     stmt = stmt.limit(max(1, min(f.limit, 100))).offset(max(0, f.offset))
     return list(session.scalars(stmt)), total

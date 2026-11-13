@@ -35,6 +35,9 @@ class EventIn(BaseModel):
     address: str = Field("", max_length=300)
     start_at: datetime
     end_at: datetime | None = None
+    series_until: datetime | None = Field(
+        None, description="Конец серии показов: start_at — известный показ, остальные даты серии источник не сообщает"
+    )
     price_min: int | None = Field(None, ge=0, le=MAX_PRICE, description="0 = бесплатно, null = цена неизвестна")
     price_max: int | None = Field(None, ge=0, le=MAX_PRICE)
     age_limit: int | str | None = Field(None, description="число или строка вида «12+»")
@@ -71,7 +74,7 @@ class EventIn(BaseModel):
             raise ValueError("возрастное ограничение: от 0 до 99")
         return value
 
-    @field_validator("start_at", "end_at")
+    @field_validator("start_at", "end_at", "series_until")
     @classmethod
     def _to_local_naive(cls, value: datetime | None) -> datetime | None:
         if value is not None and value.tzinfo is not None:
@@ -83,6 +86,9 @@ class EventIn(BaseModel):
         """Источники ошибаются в мелочах: чиним, а не отклоняем всю запись."""
         if self.end_at is not None and self.end_at < self.start_at:
             self.end_at = None
+        # Серия имеет смысл, только если заканчивается позже дня известного показа и событие не идёт непрерывно.
+        if self.series_until is not None and (self.end_at is not None or self.series_until.date() <= self.start_at.date()):
+            self.series_until = None
         if self.price_min is not None and self.price_max is not None and self.price_max < self.price_min:
             self.price_min, self.price_max = self.price_max, self.price_min
         return self
@@ -99,6 +105,7 @@ class EventOut(BaseModel):
     address: str
     start_at: datetime
     end_at: datetime | None
+    series_until: datetime | None = Field(None, description="Конец серии показов; даты между start_at и этим днём неизвестны")
     price_min: int | None
     price_max: int | None
     price_text: str

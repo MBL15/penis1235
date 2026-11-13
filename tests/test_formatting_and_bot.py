@@ -7,7 +7,7 @@ from app.seed import seed
 
 
 def ev(**kw):
-    defaults = dict(title="Тест", start_at=datetime(2026, 11, 8, 18, 30), end_at=None, price_min=None, price_max=None,
+    defaults = dict(title="Тест", start_at=datetime(2026, 11, 8, 18, 30), end_at=None, series_until=None, price_min=None, price_max=None,
                     age_limit=0, status="scheduled", venue="", city="Уфа", address="", description="", sources=[])
     return SimpleNamespace(**{**defaults, **kw})
 
