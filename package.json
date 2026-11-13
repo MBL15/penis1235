@@ -1,0 +1,12 @@
+{
+  "name": "afisha-frontend",
+  "private": true,
+  "description": "Сборка стилей фронтенда: Tailwind CSS собирает app/static/tailwind.css из разметки и скриптов. Готовый файл лежит в репозитории, на сервере сборка не нужна.",
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i frontend/tailwind.css -o app/static/tailwind.css --minify",
+    "watch:css": "tailwindcss -c tailwind.config.js -i frontend/tailwind.css -o app/static/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "~3.4.19"
+  }
+}

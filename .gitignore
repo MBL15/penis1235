@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+afisha.db
+.pytest_cache/
+
+node_modules/
+
+# секреты и локальные файлы (в репозиторий попадает только .env.example)
+.env.*
+!.env.example
+release.tgz
+
+# колёса зависимостей для сборки без доступа к PyPI (см. deploy/Dockerfile.offline)
+wheels/
+
+# кеш списка адресов Яндекс Афиши: создаётся при синхронизации
+data/yandex_afisha_urls.json

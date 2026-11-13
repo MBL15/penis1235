@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Пример виджета афиши</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #fbfbf8; --text: #222; --muted: #666; --line: #d6d6cf; --code: #eeeee8; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1b1d1c; --text: #e6e6e1; --muted: #a0a29c; --line: #3a3d3b; --code: #26292a; } }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 Georgia, "Times New Roman", serif; }
+    .page { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr) 320px; }
+    @media (max-width: 760px) { .page { grid-template-columns: minmax(0, 1fr); } }
+    header { grid-column: 1 / -1; border-bottom: 3px double var(--line); padding-bottom: 12px; }
+    header small { color: var(--muted); font-family: system-ui, sans-serif; }
+    h1 { margin: 4px 0 0; font-size: 1.5rem; }
+    h2 { font-size: 1.15rem; margin-top: 0; }
+    p { margin: 0 0 12px; }
+    .note { font-family: system-ui, sans-serif; font-size: .9rem; color: var(--muted); }
+    pre { background: var(--code); padding: 12px; border-radius: 8px; overflow-x: auto; font-size: .85rem; line-height: 1.45; }
+    a { color: inherit; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <small>Пример чужого сайта (имитация сайта министерства)</small>
+      <h1>Министерство культуры: новости</h1>
+    </header>
+
+    <article>
+      <h2>Как подключить афишу к вашему сайту</h2>
+      <p>Виджет вставляется двумя строками и не требует доступа к системам сайта: он сам запрашивает открытое API и рисуется в изолированном блоке, поэтому стили сайта ему не мешают.</p>
+      <pre id="snippet"></pre>
+      <p class="note">Настройки через атрибуты: <code>data-city</code>, <code>data-category</code>, <code>data-when</code> (today, tomorrow, weekend, week), <code>data-free</code>, <code>data-kids</code>, <code>data-limit</code>, <code>data-title</code>.</p>
+      <p>Полные возможности — в <a href="/docs">документации API</a>: поиск, фильтры, приём событий от организаторов и ИИ-подбор.</p>
+    </article>
+
+    <aside>
+      <div id="afisha"></div>
+      <script src="/widget.js" data-target="#afisha" data-limit="5" data-title="Афиша на выходные" data-when="weekend"></script>
+    </aside>
+  </div>
+
+  <script src="/static/widget-demo.js"></script>
+</body>
+</html>
