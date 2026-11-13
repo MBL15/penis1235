@@ -705,7 +705,9 @@ async def run() -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
+    from .observability import setup_logging
+
+    setup_logging()  # те же JSON-логи, что у сайта: без номеров чатов и текстов сообщений
     asyncio.run(run())
 
 
