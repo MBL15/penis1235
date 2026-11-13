@@ -24,7 +24,7 @@ const SPRING = 'cubic-bezier(.34,1.56,.64,1)';
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ['./app/static/index.html', './app/static/app.js', './app/static/boot.js', './app/pages.py', './app/plan_page.py', './app/static/admin.html', './app/static/admin.js', './app/static/feedback.html', './app/static/feedback.js'],
+  content: ['./app/static/index.html', './app/static/app.js', './app/static/boot.js', './app/pages.py', './app/plan_page.py', './app/static/admin.html', './app/static/admin.js', './app/static/feedback.html', './app/static/feedback.js', './app/static/account.html', './app/static/account.js'],
   // Классы тонов собираются в app.js из слага категории, поэтому в тексте их целиком нет.
   safelist: [{ pattern: /^tone-/ }],
   theme: {

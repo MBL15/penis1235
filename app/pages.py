@@ -30,6 +30,11 @@ BANNER_TEXT = {
 }
 
 
+_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{}</svg>'
+_ICON_BELL = _ICON.format('<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/>')
+_ICON_SHARE = _ICON.format('<circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="m8.3 10.8 7.4-3.6M8.3 13.2l7.4 3.6"/>')
+
+
 def esc(value) -> str:
     return html.escape(str(value if value is not None else ""), quote=True)
 
@@ -60,16 +65,20 @@ def _layout(title: str, description: str, body: str, *, path: str = "", image: s
   {chr(10).join('  ' + m for m in meta).strip()}
   <script src="/static/boot.js"></script>
   <link rel="stylesheet" href="/static/tailwind.css">
+  <link rel="stylesheet" href="/static/ui.css">
 </head>
 <body class="min-h-screen bg-art bg-[#eef2fb] bg-fixed text-ink antialiased">
   <header class="mx-auto flex max-w-[820px] items-center justify-between gap-3 px-4 pt-4">
     <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-white">← К афише</a>
-    <a href="/docs" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink w600:hidden">API</a>
+    <nav class="flex items-center gap-1"><a href="/account" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink">Кабинет</a>
+    <a href="/docs" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink w600:hidden">API</a></nav>
   </header>
   <main class="mx-auto max-w-[820px] px-4 pb-12 pt-5">
 {body}
     <p class="mx-auto mt-6 max-w-[780px] text-center text-[.85rem] text-ink-3">{esc(config.DISCLAIMER)}</p>
   </main>
+  <script src="/static/ui.js" defer></script>
+  <script src="/static/visit.js"></script>
 </body>
 </html>
 """
@@ -143,7 +152,8 @@ def render_event_page(event: Event, now: datetime | None = None) -> str:
     for src in event.sources or []:
         name, url = esc(src.get("name", "источник")), _https(src.get("url"))
         link = (f'<a class="font-semibold text-brand underline underline-offset-2" href="{esc(url)}" target="_blank" '
-                f'rel="noopener noreferrer">{name}<span class="sr-only"> (откроется в новой вкладке)</span></a>') if url else name
+                f'rel="noopener noreferrer" data-visit="ticket" data-event="{int(event.id)}">{name}'
+                f'<span class="sr-only"> (откроется в новой вкладке)</span></a>') if url else name
         state = STATUSES.get(src.get("status"), "") or "статус источником не указан"
         sources.append(f'<li class="m-0">{link} <span class="text-ink-3">· {esc(state)}</span></li>')
     source_block = ""
@@ -155,8 +165,15 @@ def render_event_page(event: Event, now: datetime | None = None) -> str:
 
     actions = []
     if _https(event.url):
-        actions.append(f'<a class="{PRIMARY}" href="{esc(_https(event.url))}" target="_blank" rel="noopener noreferrer">'
+        actions.append(f'<a class="{PRIMARY}" href="{esc(_https(event.url))}" target="_blank" rel="noopener noreferrer" '
+                       f'data-visit="ticket" data-event="{int(event.id)}">'
                        f'Источник и билеты<span class="sr-only"> (откроется в новой вкладке)</span></a>')
+    follow_label = " · ".join(p for p in (event.city, CATEGORIES.get(event.category, "")) if p)
+    if event.status != "cancelled":  # на отменённое событие и его категорию подписывать незачем
+        actions.append(f'<button type="button" class="{SECONDARY} ui-secondary" data-follow data-city="{esc(event.city)}" '
+                       f'data-category="{esc(event.category)}" data-label="{esc(follow_label)}">{_ICON_BELL}'
+                       f'<span class="ui-heart">Следить: {esc(follow_label)}</span></button>')
+    actions.append(f'<button type="button" class="{SECONDARY} ui-secondary" data-share>{_ICON_SHARE}Поделиться</button>')
     actions.append(f'<a class="{SECONDARY}" href="/feedback?event={int(event.id)}">Сообщить об ошибке</a>')
 
     updated = event.updated_at or event.created_at
@@ -171,7 +188,7 @@ def render_event_page(event: Event, now: datetime | None = None) -> str:
       <dl class="m-0 grid gap-3">{"".join(facts)}</dl>
       <div class="text-ink-2">{description}</div>
       {source_block}
-      <div class="mt-2 flex flex-wrap gap-3">{"".join(actions)}</div>
+      <div class="mt-2 ui-actions">{"".join(actions)}</div>
       <p class="m-0 text-[.85rem] text-ink-3">{esc(stamp)} Постоянная ссылка на эту карточку: <a class="text-brand underline underline-offset-2" href="/event/{int(event.id)}">/event/{int(event.id)}</a></p>
     </article>
     <script type="application/ld+json">{_structured_data(event)}</script>"""

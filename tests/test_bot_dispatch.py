@@ -453,3 +453,56 @@ def test_agent_gets_the_events_of_the_previous_answer(dispatcher, wired, monkeyp
     assert shown and seen[0]["context_event_ids"] is None and seen[0]["chat_id"] == CHAT
     wired.say(dispatcher, "ещё варианты")
     assert seen[1]["context_event_ids"] == shown
+
+
+# ---------- кабинет в боте (docs/08) ----------
+
+def test_account_command_opens_the_cabinet_in_the_mini_app(dispatcher, wired, monkeypatch):
+    monkeypatch.setattr(bot.config, "WEBAPP_URL", "https://afisha.example.org")
+    wired.say(dispatcher, "/account")
+    button = wired.last_markup.inline_keyboard[0][0]
+    assert button.web_app.url == "https://afisha.example.org/account" and "Кабинет" in wired.last_text
+    monkeypatch.setattr(bot.config, "WEBAPP_URL", "")
+    wired.say(dispatcher, "/account")
+    assert "не задан HTTPS-адрес" in wired.last_text
+
+
+def test_moderator_reply_reaches_the_author_in_telegram_once(session, monkeypatch):
+    from app.models import Feedback
+    from app.models import User as Account
+
+    monkeypatch.setattr(bot, "SessionLocal", lambda: _Ctx(session))
+    send = AsyncMock()
+    monkeypatch.setattr(Bot, "send_message", send)
+    author = Account(telegram_id=9001, display_name="Анна", role="organizer", created_at=datetime(2026, 11, 10))
+    session.add(author)
+    session.flush()
+    item = Feedback(kind="organizer", message="Добавьте наш концерт", message_hash="h1", user_id=author.id, reply="Добавили <b>концерт</b>")
+    session.add_all([item, Feedback(kind="other", message="Без ответа", message_hash="h2", user_id=author.id),
+                     Feedback(kind="other", message="Аноним", message_hash="h3", reply="Некому")])
+    session.commit()
+    assert asyncio.run(bot.send_feedback_replies(Bot(TOKEN))) == 1
+    chat_id, text = send.call_args.args[:2]
+    assert chat_id == 9001 and f"№{item.id}" in text and "&lt;b&gt;концерт" in text and "/account" in text  # ответ экранирован
+    assert asyncio.run(bot.send_feedback_replies(Bot(TOKEN))) == 0 and send.await_count == 1  # второй раз не отправляем
+
+
+def test_a_flaky_send_keeps_the_reply_and_a_blocked_bot_stops_retrying(session, monkeypatch):
+    from app.models import Feedback
+    from app.models import User as Account
+
+    monkeypatch.setattr(bot, "SessionLocal", lambda: _Ctx(session))
+    send = AsyncMock()
+    monkeypatch.setattr(Bot, "send_message", send)
+    author = Account(telegram_id=9002, display_name="Борис", role="user", created_at=datetime(2026, 11, 10))
+    session.add(author)
+    session.flush()
+    item = Feedback(kind="other", message="Вопрос", message_hash="h4", user_id=author.id, reply="Ответ")
+    session.add(item)
+    session.commit()
+    send.side_effect = TelegramBadRequest(method=None, message="Bad Request: temporary")
+    assert asyncio.run(bot.send_feedback_replies(Bot(TOKEN))) == 0 and item.notified_at is None  # сбой временный: повторим
+    send.side_effect = TelegramForbiddenError(method=None, message="Forbidden: bot was blocked by the user")
+    assert asyncio.run(bot.send_feedback_replies(Bot(TOKEN))) == 0 and item.notified_at is not None  # заблокировал: больше не пишем
+    send.reset_mock()
+    assert asyncio.run(bot.send_feedback_replies(Bot(TOKEN))) == 0 and send.await_count == 0

@@ -23,13 +23,13 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.orm import Session
 
-from . import agent_actions, config, subscriptions
+from . import agent_actions, config, feedback, subscriptions
 from .agent import ask
 from .config import now_local
 from .db import SessionLocal, init_db
 from .formatting import render_event, render_list
 from .hints import empty_hint
-from .models import Event, Subscription
+from .models import Event, Feedback, Subscription, User
 from .normalize import CATEGORIES
 from .search import SearchFilters, facets, get_event, resolve_when, search
 from .security import RateLimiter
@@ -471,6 +471,17 @@ async def on_app(message: Message) -> None:
     await message.answer("Вся афиша с фильтрами и ИИ-подбором в одном окне:", reply_markup=markup)
 
 
+@router.message(Command("account"))
+async def on_account(message: Message) -> None:
+    """Кабинет открывается в мини-приложении: подпись Telegram там входит в аккаунт без паролей (docs/08)."""
+    if not config.WEBAPP_URL:
+        await message.answer("Кабинет пока не подключён: не задан HTTPS-адрес (WEBAPP_URL).")
+        return
+    markup = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👤 Открыть кабинет", web_app=WebAppInfo(url=f"{config.WEBAPP_URL}/account"))]])
+    await message.answer("Кабинет: история посещений (только если вы её включите), подписки, сохранённые поиски и ваши обращения. "
+                         "Без входа афиша работает как раньше.", reply_markup=markup)
+
+
 @router.message(Command("city"))
 async def on_city(message: Message) -> None:
     with SessionLocal() as session:
@@ -776,12 +787,52 @@ async def send_digests(bot: Bot, now=None) -> int:
     return sent
 
 
+async def send_feedback_replies(bot: Bot) -> int:
+    """Автору-аккаунту уходит ответ модератора на его обращение. Отправляет бот: с сервера сайта Telegram может быть недоступен.
+    Возвращает число отправленных сообщений. Заблокировавшему бота не пишем и больше не пробуем."""
+
+    def collect() -> list[tuple[int, int, str]]:
+        with SessionLocal() as session:
+            rows = []
+            for item in feedback.pending_replies(session):
+                user = session.get(User, item.user_id)
+                if user is not None:
+                    rows.append((item.id, user.telegram_id, item.reply or ""))
+            return rows
+
+    def finish(feedback_id: int) -> None:
+        with SessionLocal() as session:
+            item = session.get(Feedback, feedback_id)
+            if item is not None:
+                item.notified_at = now_local()
+                session.commit()
+
+    sent = 0
+    for feedback_id, chat_id, reply in await asyncio.to_thread(collect):
+        text = f"💬 <b>Ответ на ваше обращение №{feedback_id}</b>\n\n{html.escape(reply)}\n\nВсе обращения и статусы: /account"
+        try:
+            await bot.send_message(chat_id, clip(text), disable_web_page_preview=True)
+        except TelegramForbiddenError:  # бота заблокировали: пометка нужна, чтобы не пробовать каждые полчаса
+            await asyncio.to_thread(finish, feedback_id)
+            continue
+        except TelegramAPIError as exc:  # временный сбой: ответ дождётся следующей проверки
+            log.warning("Не удалось отправить ответ на обращение: %s", exc)
+            continue
+        await asyncio.to_thread(finish, feedback_id)
+        sent += 1
+        await asyncio.sleep(0.05)  # Telegram ограничивает частоту отправки
+    return sent
+
+
 async def notify_loop(bot: Bot) -> None:
     while True:
         try:
             sent = await send_digests(bot)
             if sent:
                 log.info("Отправлено подборок по подпискам: %d", sent)
+            replies = await send_feedback_replies(bot)
+            if replies:
+                log.info("Отправлено ответов на обращения: %d", replies)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -833,6 +884,7 @@ async def run() -> None:
          BotCommand(command="plan", description="Выходной день: план из 2–4 событий"),
          BotCommand(command="subscribe", description="Подписаться на новые события"),
          BotCommand(command="unsubscribe", description="Отписаться от всех подписок"),
+         BotCommand(command="account", description="Кабинет: история, подписки, обращения"),
          BotCommand(command="cancel", description="Отменить действие"),
          BotCommand(command="help", description="Справка")]
     )

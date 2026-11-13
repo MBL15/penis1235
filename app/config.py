@@ -23,6 +23,11 @@ DISCLAIMER = os.getenv("DISCLAIMER") or (
     "Данные собраны из открытых источников, перед визитом уточняйте их у организатора."
 )
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+# Имя бота без @: нужно кнопке «Войти через Telegram» на сайте. Домен сайта должен быть привязан к боту (BotFather: /setdomain).
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "BashSZbot").strip().lstrip("@")
+# Аккаунты (docs/08): сколько дней живёт вход на сайте и сколько хранится история посещений.
+SESSION_DAYS = max(1, int(os.getenv("SESSION_DAYS", "30") or 30))
+HISTORY_RETENTION_DAYS = max(1, int(os.getenv("HISTORY_RETENTION_DAYS", "90") or 90))
 # Адрес мини-приложения: Telegram открывает только HTTPS. По умолчанию берём PUBLIC_URL, если он https.
 WEBAPP_URL = os.getenv("WEBAPP_URL") or (PUBLIC_URL if PUBLIC_URL.startswith("https://") else "")
 # Если Telegram недоступен напрямую (блокировки), укажите прокси: http://127.0.0.1:10809 или socks5://host:port
@@ -78,7 +83,7 @@ AGENT_MODE = os.getenv("AGENT_MODE", "auto")  # auto | llm | rules
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", "")
 # Быстрая модель с вызовом функций. Старые (2.5) закрыты для новых ключей, алиас -latest тоже доступен не всем (404);
 # список моделей своего ключа: client.models.list().
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-4-hydrogen")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 # Второй провайдер, бесплатный тариф Groq (API в формате OpenAI). Ключ: https://console.groq.com/keys. Без ключа не используется.
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
@@ -87,7 +92,7 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 # Порядок провайдеров: если первый не ответил (квота, перегрузка, сеть), берётся следующий; потом режим правил.
 LLM_PROVIDERS = [p.strip() for p in os.getenv("LLM_PROVIDERS", "gemini,groq").split(",") if p.strip()]
 # Запасные модели через запятую: если основная вернула 429 (квота у каждой модели своя), 503 или 404, берётся следующая.
-GEMINI_FALLBACK_MODELS = [m.strip() for m in os.getenv("GEMINI_FALLBACK_MODELS", "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite").split(",") if m.strip()]
+GEMINI_FALLBACK_MODELS = [m.strip() for m in os.getenv("GEMINI_FALLBACK_MODELS", "gemini-3.1-flash-lite,gemini-3.6-flash,gemini-3.8-flash,gemini-4-hydrogen").split(",") if m.strip()]
 # Сколько секунд не трогать модель после отказа по квоте или перегрузке (суточная квота сбрасывается раз в сутки, поэтому не гоняем её зря).
 GEMINI_COOLDOWN_SECONDS = int(os.getenv("GEMINI_COOLDOWN_SECONDS", "600"))
 

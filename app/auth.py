@@ -11,6 +11,8 @@ from typing import Annotated
 from fastapi import Header, HTTPException, Request
 
 from . import config
+from .accounts import optional_user
+from .deps import SessionDep
 from .security import RateLimiter, auth_limiter
 
 _ACTOR = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
@@ -37,8 +39,23 @@ def admin_keys() -> tuple[dict[str, str], bool]:
     return keys, too_short
 
 
-def require_admin(request: Request, x_api_key: Annotated[str | None, Header()] = None) -> str:
-    """Проверяет ключ и возвращает имя модератора для журнала изменений."""
+def require_admin(request: Request, session: SessionDep, x_api_key: Annotated[str | None, Header()] = None) -> str:
+    """Доступ модератора: по ключу X-API-Key или по входу в аккаунт с ролью «модератор» (docs/08). Возвращает, кого записать в
+    журнал изменений: имя ключа или `user:<номер аккаунта>`. Если ключ передан, он проверяется всегда, даже при входе в аккаунт."""
+    if not x_api_key:
+        user = optional_user(request, session)
+        if user is not None and user.role == "moderator":
+            return f"user:{user.id}"
+    return require_key_admin(request, x_api_key)
+
+
+def is_account_actor(actor: str) -> bool:
+    return actor.startswith("user:")
+
+
+def require_key_admin(request: Request, x_api_key: Annotated[str | None, Header()] = None) -> str:
+    """Только ключ (ADMIN_API_KEY или ADMIN_USERS). Нужен там, где аккаунт-модератор не должен справляться сам: роли и ключи
+    Министерства выдаёт владелец ключа администратора. Возвращает имя владельца ключа для журнала."""
     keys, too_short = admin_keys()
     if not keys:
         if too_short:

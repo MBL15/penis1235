@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Reques
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
 
-from . import audit, config
+from . import accounts, audit, config
 from . import agent_actions
 from .agent import ask as agent_ask
 from .auth import require_admin
@@ -61,7 +61,7 @@ from .security import RateLimiter, ask_limiter
 from .telegram_auth import validate_init_data
 from . import subscriptions
 
-router = APIRouter(responses={
+router = APIRouter(dependencies=[accounts.PartnerKeyDep], responses={
     401: {"model": ErrorOut, "description": "Нет или неверен ключ X-API-Key"},
     404: {"model": ErrorOut, "description": "Не найдено"},
     422: {"model": ErrorOut, "description": "Некорректные данные запроса"},
@@ -274,14 +274,18 @@ def plan_day(payload: PlanIn, session: SessionDep) -> PlanOut:
 
 # ---------- подписки (ТЗ §6.3) ----------
 
-def telegram_chat(request: Request) -> int:
-    """Чей это чат: из подписи Mini App в заголовке X-Telegram-Init-Data. Номер чата на веру не принимается."""
+def telegram_chat(request: Request, user: accounts.OptionalUser) -> int:
+    """Чей это чат: из подписи Mini App в заголовке X-Telegram-Init-Data или из входа в аккаунт (кука). Номер чата на веру
+    не принимается. Вход через кнопку Telegram на сайте тоже годится: номер аккаунта и есть номер личного чата с ботом."""
+    if not request.headers.get("x-telegram-init-data") and user is not None:
+        return user.telegram_id
     if not config.TELEGRAM_BOT_TOKEN:
         raise HTTPException(503, "Подписки через API работают из мини-приложения Telegram; на этом сервере они не настроены. "
                                  "Оформите подписку в боте: /subscribe")
     chat_id = validate_init_data(request.headers.get("x-telegram-init-data", ""), config.TELEGRAM_BOT_TOKEN)
     if chat_id is None:
-        raise HTTPException(401, "Нужна подпись Telegram: откройте афишу из бота (заголовок X-Telegram-Init-Data)")
+        raise HTTPException(401, "Нужна подпись Telegram: откройте афишу из бота или войдите через Telegram в кабинете "
+                                 "(заголовок X-Telegram-Init-Data)")
     return chat_id
 
 
@@ -345,7 +349,7 @@ def feedback_form() -> JSONResponse:
 
 @router.post("/feedback", response_model=FeedbackAccepted, tags=["Обратная связь"], dependencies=[Depends(feedback_limiter)],
              summary="Отправить обращение или заявку организатора")
-def send_feedback(payload: FeedbackIn, session: SessionDep) -> FeedbackAccepted:
+def send_feedback(payload: FeedbackIn, session: SessionDep, user: accounts.OptionalUser) -> FeedbackAccepted:
     """Защита от спама: поле-ловушка `website`, метка времени формы, лимит с одного адреса, не больше двух ссылок, отсев повторов.
     Контакт необязателен. Обращения хранятся не дольше 180 дней (обработанные 90)."""
     thanks = FeedbackAccepted(message="Спасибо! Обращение принято, модератор рассмотрит его.")
@@ -365,7 +369,7 @@ def send_feedback(payload: FeedbackIn, session: SessionDep) -> FeedbackAccepted:
     if payload.event_id is not None and get_event(session, payload.event_id) is None:
         raise HTTPException(422, "Такого события нет: проверьте номер или уберите его")
     purge_old(session)
-    _, result = save_feedback(session, payload)
+    _, result = save_feedback(session, payload, user_id=user.id if user else None)  # вошедший видит статус и ответ в кабинете
     metrics.inc("afisha_feedback_total", result=result)
     return thanks
 

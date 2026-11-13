@@ -70,6 +70,8 @@ class Subscription(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local)
     checked_at: Mapped[datetime] = mapped_column(DateTime, default=now_local)  # события, добавленные позже, считаются новыми
     last_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Аккаунт-владелец (docs/08): подписка из бота и с сайта остаётся одной записью, у старых подписок поле пусто
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
 
 class Feedback(Base):
@@ -85,9 +87,14 @@ class Feedback(Base):
     message: Mapped[str] = mapped_column(Text)
     contact: Mapped[str] = mapped_column(String(200), default="")  # необязательно: как ответить
     message_hash: Mapped[str] = mapped_column(String(40), default="", index=True)  # для отсева повторов
-    status: Mapped[str] = mapped_column(String(12), default="new", index=True)  # new | processed
+    status: Mapped[str] = mapped_column(String(12), default="new", index=True)  # new | in_progress | processed
     processed_by: Mapped[str] = mapped_column(String(100), default="")
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Автор-аккаунт и ответ модератора (docs/08): у организатора есть список своих обращений со статусом и ответом
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    reply: Mapped[str | None] = mapped_column(Text, nullable=True)
+    replied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # когда автору ушло уведомление об ответе
 
 
 class RawRecord(Base):
@@ -166,6 +173,78 @@ class PendingAction(Base):
     summary: Mapped[str] = mapped_column(Text, default="")  # что будет сделано, текст пишет сервер, а не модель
     status: Mapped[str] = mapped_column(String(12), default="pending")  # pending | confirmed | cancelled
     trace_id: Mapped[str] = mapped_column(String(32), default="")
+
+
+class User(Base):
+    """Аккаунт (docs/08). Хранится только то, без чего он не работает: номер Telegram, имя оттуда же, роль и согласие на историю.
+    Телефон, почта и пароли не запрашиваются. Сайт работает и без аккаунта."""
+
+    __tablename__ = "users"
+    # Номера не используются повторно после удаления аккаунта: на номер аккаунта ссылаются записи журнала изменений (user:<номер>)
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(100), default="")  # из Telegram; пусто, пока человек не входил (роль выдана заранее)
+    role: Mapped[str] = mapped_column(String(12), default="user", index=True)  # user | organizer | moderator | ministry
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    history_enabled: Mapped[bool] = mapped_column(Boolean, default=False)  # история посещений: только по согласию
+    consent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # когда согласие дано
+
+
+class UserSession(Base):
+    """Вход на сайте. В базе только хеш токена: кража базы не даёт войти. Сам токен лежит в куке HttpOnly."""
+
+    __tablename__ = "user_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class VisitHistory(Base):
+    """История посещений: открыл карточку (view) или перешёл по ссылке источника (ticket). Пишется только при согласии,
+    хранится app.accounts.HISTORY_RETENTION_DAYS дней, стирается кнопкой."""
+
+    __tablename__ = "visit_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    event_id: Mapped[int] = mapped_column(Integer, index=True)
+    kind: Mapped[str] = mapped_column(String(8), default="view")  # view | ticket
+    viewed_at: Mapped[datetime] = mapped_column(DateTime, default=now_local, index=True)
+
+
+class SavedSearch(Base):
+    """Сохранённые условия поиска: те же фильтры, что и у подписок и GET /events."""
+
+    __tablename__ = "saved_searches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    filters: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local)
+
+
+class ApiKey(Base):
+    """Ключ для встраивания (роль «Министерство»): только чтение афиши, свой лимит запросов в минуту. В базе хеш, сам ключ
+    показывается один раз при создании."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    key_prefix: Mapped[str] = mapped_column(String(12), default="")  # начало ключа, чтобы отличать ключи в списке
+    name: Mapped[str] = mapped_column(String(80), default="")
+    owner_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    rate_limit: Mapped[int] = mapped_column(Integer, default=600)  # запросов в минуту
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    requests_total: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class SyncRun(Base):

@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from . import audit
 from .config import now_local
-from .models import Feedback
+from .models import Feedback, User
 from .security import RateLimiter
 
 KINDS = {
@@ -71,6 +71,14 @@ class FeedbackOut(BaseModel):
     status: str
     processed_by: str = ""
     processed_at: datetime | None = None
+    user_id: int | None = None
+    author_role: str = ""  # роль автора-аккаунта (organizer, user…), пусто у анонимных обращений
+    reply: str = ""
+    replied_at: datetime | None = None
+
+
+STATUS_LABELS = {"new": "Принято", "in_progress": "В работе", "processed": "Обработано"}
+MAX_REPLY = 1000
 
 
 def _sign(issued: int) -> str:
@@ -113,24 +121,32 @@ def purge_old(session: Session, now: datetime | None = None) -> int:
     return removed
 
 
-def save_feedback(session: Session, data: FeedbackIn, now: datetime | None = None) -> tuple[Feedback | None, str]:
-    """(обращение, результат): saved | duplicate. Повтор того же текста за сутки второй раз не сохраняется."""
+def save_feedback(session: Session, data: FeedbackIn, now: datetime | None = None, *, user_id: int | None = None) -> tuple[Feedback | None, str]:
+    """(обращение, результат): saved | duplicate. Повтор того же текста за сутки второй раз не сохраняется.
+    Если человек вошёл в аккаунт, обращение привязывается к нему: он увидит статус и ответ в кабинете."""
     now = now or now_local()
     digest = hashlib.sha1(f"{data.kind}|{data.event_id}|{data.message.lower()}".encode("utf-8")).hexdigest()
     same = session.scalar(select(Feedback).where(Feedback.message_hash == digest, Feedback.created_at > now - timedelta(days=1)))
     if same is not None:
         return same, "duplicate"
     item = Feedback(kind=data.kind, event_id=data.event_id, message=data.message, contact=data.contact, message_hash=digest,
-                    created_at=now)
+                    created_at=now, user_id=user_id)
     session.add(item)
     session.commit()
     return item, "saved"
 
 
-def _out(item: Feedback) -> FeedbackOut:
+def _out(item: Feedback, roles: dict[int, str] | None = None) -> FeedbackOut:
     return FeedbackOut(id=item.id, created_at=item.created_at, kind=item.kind, kind_label=KINDS.get(item.kind, item.kind),
                        event_id=item.event_id, message=item.message, contact=item.contact or "", status=item.status,
-                       processed_by=item.processed_by or "", processed_at=item.processed_at)
+                       processed_by=item.processed_by or "", processed_at=item.processed_at, user_id=item.user_id,
+                       author_role=(roles or {}).get(item.user_id, "") if item.user_id else "", reply=item.reply or "",
+                       replied_at=item.replied_at)
+
+
+def _roles(session: Session, items: list[Feedback]) -> dict[int, str]:
+    ids = {i.user_id for i in items if i.user_id}
+    return {u.id: u.role for u in session.scalars(select(User).where(User.id.in_(ids)))} if ids else {}
 
 
 def list_feedback(session: Session, *, status: str = "new", limit: int = 50) -> list[FeedbackOut]:
@@ -138,16 +154,39 @@ def list_feedback(session: Session, *, status: str = "new", limit: int = 50) -> 
     stmt = select(Feedback).order_by(Feedback.id.desc())
     if status != "all":
         stmt = stmt.where(Feedback.status == status)
-    return [_out(item) for item in session.scalars(stmt.limit(max(1, min(limit, 200))))]
+    items = list(session.scalars(stmt.limit(max(1, min(limit, 200)))))
+    roles = _roles(session, items)
+    return [_out(item, roles) for item in items]
 
 
-def set_feedback_status(session: Session, feedback_id: int, status: str, actor: str) -> FeedbackOut | None:
+def list_own(session: Session, user_id: int, *, limit: int = 100) -> list[FeedbackOut]:
+    """Обращения одного аккаунта со статусом и ответом модератора."""
+    items = list(session.scalars(select(Feedback).where(Feedback.user_id == user_id).order_by(Feedback.id.desc()).limit(limit)))
+    return [_out(item) for item in items]
+
+
+def set_feedback_status(session: Session, feedback_id: int, status: str | None, actor: str, reply: str | None = None) -> FeedbackOut | None:
+    """Меняет статус и/или записывает ответ автору. Ответ уйдёт автору-аккаунту в Telegram (бот, app.bot.send_feedback_replies)."""
     item = session.get(Feedback, feedback_id)
     if item is None:
         return None
-    if item.status != status:
-        audit.record(session, actor, "feedback", None, {"feedback_id": item.id, "status": [item.status, status]})
+    changes: dict = {}
+    if status is not None and item.status != status:
+        changes["status"] = [item.status, status]
         item.status = status
         item.processed_by, item.processed_at = (actor, now_local()) if status == "processed" else ("", None)
+    if reply is not None and reply.strip() != (item.reply or ""):
+        item.reply, item.replied_at, item.notified_at = reply.strip()[:MAX_REPLY] or None, now_local(), None
+        changes["reply"] = "ответ записан"  # текст ответа в журнал не копируем: он адресован автору
+        if not item.reply:
+            item.replied_at = None
+    if changes:
+        audit.record(session, actor, "feedback", None, {"feedback_id": item.id, **changes})
         session.commit()
-    return _out(item)
+    return _out(item, _roles(session, [item]))
+
+
+def pending_replies(session: Session, limit: int = 50) -> list[Feedback]:
+    """Обращения аккаунтов, на которые ответили, а автору ещё не сообщили. Рассылку делает бот."""
+    return list(session.scalars(select(Feedback).where(
+        Feedback.user_id.is_not(None), Feedback.reply.is_not(None), Feedback.notified_at.is_(None)).order_by(Feedback.id).limit(limit)))

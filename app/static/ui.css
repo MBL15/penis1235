@@ -1,0 +1,115 @@
+/* Общие элементы интерфейса на всех страницах: панель разделов, уведомления, переходы между страницами, отклик на нажатие.
+   Цвета и скругления те же, что в tailwind.config.js. Все движения отключаются у тех, кто выбрал «уменьшить движение». */
+:root {
+  --ui-brand: #4f46e5;
+  --ui-brand-ink: #3730a3;
+  --ui-ink: #172036;
+  --ui-glass: rgba(255, 255, 255, .92);
+  --ui-line: rgba(255, 255, 255, .9);
+  --ui-shadow: 0 10px 30px rgba(52, 64, 120, .18), inset 0 1px 0 rgba(255, 255, 255, .9);
+  --ui-ease: cubic-bezier(.22, 1, .36, 1);
+  --ui-spring: cubic-bezier(.34, 1.56, .64, 1);
+  --ui-nav-h: 64px;
+}
+
+/* ---------- плавный переход между страницами (Chrome, Edge, Safari 18; в остальных просто обычная навигация) ---------- */
+@view-transition { navigation: auto; }
+::view-transition-old(root) { animation: ui-fade-out .16s ease both; }
+::view-transition-new(root) { animation: ui-fade-in .26s var(--ui-ease) both; }
+@keyframes ui-fade-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes ui-fade-out { to { opacity: 0; } }
+
+/* ---------- панель разделов: всегда под рукой, одно нажатие до любого раздела ---------- */
+.ui-nav {
+  position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); z-index: 40;
+  display: flex; gap: 4px; padding: 6px; border-radius: 22px;
+  background: var(--ui-glass); border: 1px solid var(--ui-line); box-shadow: var(--ui-shadow);
+  backdrop-filter: blur(16px) saturate(1.6); -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  transform: translateX(-50%); animation: ui-nav-in .55s var(--ui-spring) .15s backwards;
+  max-width: calc(100vw - 24px);
+}
+@keyframes ui-nav-in { from { opacity: 0; transform: translate(-50%, 28px) scale(.96); } }
+.ui-nav a {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-width: 76px; min-height: 52px; padding: 6px 12px; border-radius: 16px;
+  color: #34405f; font-weight: 650; font-size: .74rem; line-height: 1.1; text-decoration: none; text-align: center;
+  transition: background .2s, color .2s, transform .18s var(--ui-ease);
+}
+.ui-nav a svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .3s var(--ui-spring); }
+.ui-nav a:hover { background: rgba(79, 70, 229, .09); color: var(--ui-brand-ink); }
+.ui-nav a:hover svg { transform: translateY(-2px) scale(1.08); }
+.ui-nav a:active { transform: scale(.94); }
+.ui-nav a[aria-current="page"] { background: var(--ui-brand); color: #fff; box-shadow: 0 8px 18px rgba(79, 70, 229, .35); }
+.ui-nav a[aria-current="page"] svg { transform: scale(1.06); }
+.ui-nav .ui-dot { position: absolute; top: 6px; right: 18px; width: 9px; height: 9px; border-radius: 50%; background: #16a34a; border: 2px solid #fff; animation: ui-pop .4s var(--ui-spring); }
+@keyframes ui-pop { from { transform: scale(0); } }
+body.ui-has-nav { padding-bottom: calc(var(--ui-nav-h) + 28px + env(safe-area-inset-bottom)); }
+/* На главной в широком окне все разделы уже есть в верхней панели: нижняя не нужна. */
+@media (min-width: 761px) { body.ui-home .ui-nav { display: none; } body.ui-home.ui-has-nav { padding-bottom: 0; } }
+/* В мини-приложении Telegram своя нижняя кнопка: панель поднимаем, чтобы они не пересекались. */
+.tg .ui-nav { bottom: max(70px, calc(env(safe-area-inset-bottom) + 58px)); }
+@media (max-width: 420px) { .ui-nav a { min-width: 0; flex: 1; padding: 6px 8px; } .ui-nav { left: 12px; right: 12px; transform: none; animation-name: ui-nav-in-mobile; } }
+@keyframes ui-nav-in-mobile { from { opacity: 0; transform: translateY(28px); } }
+
+/* ---------- уведомления: результат действия виден сразу, без поиска по странице ---------- */
+.ui-toasts { position: fixed; left: 50%; bottom: calc(var(--ui-nav-h) + 34px + env(safe-area-inset-bottom)); z-index: 70; display: grid; gap: 8px; justify-items: center; transform: translateX(-50%); width: min(92vw, 440px); pointer-events: none; }
+.ui-toast {
+  pointer-events: auto; display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; border-radius: 16px;
+  background: #172036; color: #fff; font-weight: 600; box-shadow: 0 14px 34px rgba(23, 32, 54, .35);
+  animation: ui-toast-in .42s var(--ui-spring); transition: opacity .25s, transform .25s var(--ui-ease);
+}
+.ui-toast.ui-bad { background: #9b1c1c; }
+.ui-toast.ui-out { opacity: 0; transform: translateY(10px) scale(.97); }
+.ui-toast a, .ui-toast button { margin-left: auto; flex: none; color: #c7d2fe; font-weight: 750; background: none; border: 0; text-decoration: underline; cursor: pointer; padding: 6px 4px; min-height: 36px; }
+@keyframes ui-toast-in { from { opacity: 0; transform: translateY(18px) scale(.94); } }
+
+/* ---------- отклик на нажатие и состояния загрузки ---------- */
+button, [role="button"], .ui-press { transition: transform .16s var(--ui-ease), box-shadow .2s, background .2s, opacity .2s; }
+button:not(:disabled):active, .ui-press:active { transform: scale(.965); }
+button[aria-busy="true"] { position: relative; color: transparent !important; pointer-events: none; }
+button[aria-busy="true"]::after { content: ""; position: absolute; inset: 0; margin: auto; width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid rgba(255, 255, 255, .55); border-top-color: #fff; animation: ui-spin .7s linear infinite; }
+.ui-secondary[aria-busy="true"]::after, .ui-spin-dark::after { border-color: rgba(79, 70, 229, .25); border-top-color: var(--ui-brand); }
+@keyframes ui-spin { to { transform: rotate(360deg); } }
+
+/* Заглушка, пока грузятся данные: понятно, что страница жива и что сюда придёт */
+.ui-skeleton { position: relative; overflow: hidden; border-radius: 14px; background: rgba(23, 32, 54, .07); min-height: 52px; }
+.ui-skeleton::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .7), transparent); transform: translateX(-100%); animation: ui-shimmer 1.3s ease-in-out infinite; }
+@keyframes ui-shimmer { to { transform: translateX(100%); } }
+
+/* Появление блоков по очереди: --i задаёт порядок */
+.ui-rise { animation: ui-rise .6s var(--ui-ease) backwards; animation-delay: calc(var(--i, 0) * 70ms); }
+@keyframes ui-rise { from { opacity: 0; transform: translateY(18px); } }
+/* Новая строка списка и удаление */
+.ui-new { animation: ui-new .5s var(--ui-ease); }
+@keyframes ui-new { from { opacity: 0; transform: translateX(-12px); background: rgba(79, 70, 229, .14); } }
+.ui-gone { opacity: 0; transform: translateX(14px); height: 0 !important; margin: 0 !important; padding-top: 0 !important; padding-bottom: 0 !important; overflow: hidden; transition: all .3s var(--ui-ease); }
+
+/* Переключатель вместо кнопки «включить/выключить»: состояние видно без чтения текста */
+.ui-switch { position: relative; display: inline-flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer; font-weight: 650; }
+.ui-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.ui-switch .ui-track { position: relative; width: 52px; height: 30px; border-radius: 999px; background: #b7bfd6; transition: background .25s; flex: none; }
+.ui-switch .ui-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(23, 32, 54, .3); transition: transform .3s var(--ui-spring); }
+.ui-switch input:checked + .ui-track { background: #16a34a; }
+.ui-switch input:checked + .ui-track::after { transform: translateX(22px); }
+.ui-switch input:focus-visible + .ui-track { outline: 3px solid rgba(79, 70, 229, .55); outline-offset: 2px; }
+
+/* Быстрые переходы внутри кабинета */
+.ui-jump { position: sticky; top: 8px; z-index: 30; display: flex; gap: 8px; overflow-x: auto; padding: 6px; border-radius: 18px; background: var(--ui-glass); border: 1px solid var(--ui-line); box-shadow: var(--ui-shadow); scrollbar-width: none; backdrop-filter: blur(14px); }
+.ui-jump::-webkit-scrollbar { display: none; }
+.ui-jump a { flex: none; min-height: 40px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 12px; color: #34405f; font-weight: 650; font-size: .92rem; text-decoration: none; transition: background .2s, color .2s; }
+.ui-jump a:hover { background: rgba(79, 70, 229, .09); }
+.ui-jump a[aria-current="true"] { background: var(--ui-brand); color: #fff; }
+section[id] { scroll-margin-top: 76px; }
+
+/* Кнопка «Поделиться» и «Следить» на карточке события */
+.ui-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.ui-done { border-color: #86efac !important; background: #f0fdf4 !important; color: #166534 !important; }
+.ui-done svg { transform-origin: 50% 10%; animation: ui-ring .8s var(--ui-ease); }
+@keyframes ui-ring { 15% { transform: rotate(16deg); } 35% { transform: rotate(-14deg); } 55% { transform: rotate(9deg); } 75% { transform: rotate(-5deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+  .ui-nav, .ui-toast, .ui-rise, .ui-new, .ui-skeleton::after, .ui-nav .ui-dot, .ui-done svg { animation: none !important; }
+  .ui-nav a, .ui-nav a svg, button, .ui-switch .ui-track, .ui-switch .ui-track::after, .ui-gone { transition-duration: .01ms !important; }
+  button[aria-busy="true"]::after { animation-duration: 1.6s; }
+}

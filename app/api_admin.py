@@ -5,10 +5,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 
 from . import audit, config
-from .auth import require_admin
+from .auth import is_account_actor, require_admin
 from .config import now_local
 from .deps import SessionDep
-from .feedback import FeedbackOut, list_feedback, set_feedback_status
+from .feedback import MAX_REPLY, FeedbackOut, list_feedback, set_feedback_status
 from .formatting import event_to_out
 from .ingest import parse_records
 from .moderation import EditError, edit_event, set_publication
@@ -41,7 +41,9 @@ MAX_IMPORT_RECORDS = 1000
 
 @router.get("/session", response_model=AdminSessionOut, summary="Проверка ключа: кто вошёл")
 def admin_session(actor: Annotated[str, Depends(require_admin)]) -> AdminSessionOut:
-    return AdminSessionOut(actor=actor)
+    """`via`: key (ключ X-API-Key) или account (вход в аккаунт с ролью «модератор»). Роли и ключи Министерства меняет только ключ."""
+    account = is_account_actor(actor)
+    return AdminSessionOut(actor=actor, via="account" if account else "key", can_manage_users=not account)
 
 
 @router.get("/events", response_model=EventList, summary="События для модератора (с черновиками, отменёнными и прошедшими)")
@@ -171,13 +173,19 @@ def feedback_inbox(
     return list_feedback(session, status=status, limit=limit)
 
 
-@router.patch("/feedback/{feedback_id}", response_model=FeedbackOut, summary="Отметить обращение обработанным")
+@router.patch("/feedback/{feedback_id}", response_model=FeedbackOut, summary="Статус обращения и ответ автору",
+              description="`status`: new, in_progress или processed; `reply` — ответ автору (до 1000 знаков). Автору-аккаунту ответ придёт "
+                          "в Telegram от бота. Можно передать что-то одно.")
 def feedback_status(feedback_id: Annotated[int, Path(ge=1, le=2**31 - 1)], payload: dict, session: SessionDep,
                     actor: Annotated[str, Depends(require_admin)]) -> FeedbackOut:
-    status = payload.get("status")
-    if status not in ("new", "processed"):
-        raise HTTPException(422, "status должен быть new или processed")
-    item = set_feedback_status(session, feedback_id, status, actor)
+    status, reply = payload.get("status"), payload.get("reply")
+    if status is None and reply is None:
+        raise HTTPException(422, "Передайте status или reply")
+    if status is not None and status not in ("new", "in_progress", "processed"):
+        raise HTTPException(422, "status должен быть new, in_progress или processed")
+    if reply is not None and (not isinstance(reply, str) or len(reply) > MAX_REPLY):
+        raise HTTPException(422, f"reply должен быть строкой не длиннее {MAX_REPLY} знаков")
+    item = set_feedback_status(session, feedback_id, status, actor, reply)
     if item is None:
         raise HTTPException(404, "Обращение не найдено")
     return item

@@ -398,16 +398,10 @@
     const city = $('#f-city').value;
     const category = state.categories.length === 1 ? state.categories[0] : '';
     box.hidden = false;
-    if (!tg) { box.textContent = 'Подписка на новые события оформляется в Telegram-боте: команда /subscribe.'; return; }
     const label = [city || 'вся республика', category ? (categories[category] || category) : 'любая категория'].join(' · ');
-    box.innerHTML = `<button type="button" class="${CHIP}" id="sub-go">🔔 Подписаться: ${esc(label)}</button> <span id="sub-msg"></span>`;
-    $('#sub-go').onclick = async () => {
-      const msg = $('#sub-msg');
-      try {
-        await api('/api/v1/subscriptions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tg.initData }, body: JSON.stringify({ city, category }) });
-        msg.textContent = 'Готово: пришлём новые события не чаще раза в сутки. Отписка: /unsubscribe в боте.';
-      } catch (err) { msg.textContent = err.message; }
-    };
+    // Одно нажатие: подписка оформляется сразу (в Telegram по подписи мини-приложения, в браузере по входу в кабинет).
+    // Если человек не вошёл, ui.js покажет уведомление с кнопкой «Войти». Само нажатие и ответ обрабатывает ui.js (data-follow).
+    box.innerHTML = `<button type="button" class="${CHIP} ui-secondary" data-follow data-city="${esc(city)}" data-category="${esc(category)}" data-label="${esc(label)}">🔔 Подписаться: ${esc(label)}</button>`;
   }
   let lastTotal = null;
   function updateMainButton(total = lastTotal) {

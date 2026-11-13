@@ -342,6 +342,8 @@ class SyncRunOut(BaseModel):
 
 class AdminSessionOut(BaseModel):
     actor: str
+    via: str = "key"  # key | account
+    can_manage_users: bool = True  # роли и ключи Министерства выдаёт только владелец ключа администратора
 
 
 class ErrorBody(BaseModel):

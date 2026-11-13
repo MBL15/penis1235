@@ -9,7 +9,9 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 
-from . import config, errors
+from . import accounts, config, errors
+from .api_accounts import admin_router as users_admin_router
+from .api_accounts import router as accounts_router
 from .api_admin import router as admin_router
 from .api_public import router as public_router
 from .db import init_db
@@ -37,6 +39,9 @@ DESCRIPTION = f"""
   автоматически склеивается в одну запись, а статус (отмена, перенос) приходит из самого тревожного источника.
 * **ИИ-поиск** — `POST /api/v1/ask` принимает запрос обычным языком и возвращает подборку с объяснением.
 * **Виджет** — один `<script src=".../widget.js">` на сайт, без вмешательства в его системы.
+* **Аккаунт** — необязателен: сайт, чат и API работают без входа. Вход только через Telegram (`/api/v1/auth/telegram`, кука `afisha_session`);
+  в аккаунте история посещений (только с согласия), сохранённые поиски, подписки и обращения. Роль «Министерство» выпускает ключи для
+  чтения: заголовок `X-Partner-Key`, у ключа свой лимит запросов в минуту, записать им ничего нельзя.
 * **Ошибки** во всех методах в одном формате: `{{"error": {{"code", "message", "details", "request_id"}}}}`; идентификатор запроса
   всегда есть в заголовке `X-Request-ID`.
 """
@@ -46,6 +51,8 @@ TAGS = [
     {"name": "Справочники", "description": "Города, категории и площадки для фильтров"},
     {"name": "ИИ-поиск", "description": "Запрос обычным языком"},
     {"name": "Обратная связь", "description": "Форма обращений и заявок организаторов с защитой от спама"},
+    {"name": "Аккаунт", "description": "Вход через Telegram, история посещений, сохранённые поиски, ключи Министерства. Нужна кука входа"},
+    {"name": "Аккаунты", "description": "Роли и ключи для встраивания: только владелец ключа администратора X-API-Key"},
     {"name": "Администрирование", "description": "Модерация, импорт, журнал изменений. Нужен заголовок X-API-Key; интерфейс: /admin"},
     {"name": "Приём данных", "description": "Нужен заголовок X-API-Key"},
     {"name": "Служебное", "description": "Проверка работоспособности"},
@@ -66,6 +73,8 @@ async def lifespan(_: FastAPI):
         purge_old(session)  # срок хранения обращений
         purge_traces(session)  # трассы ответов агента
         purge_actions(session)
+        accounts.purge_history(session)  # история посещений старше срока хранения
+        accounts.purge_sessions(session)  # просроченные входы
     if config.ADMIN_API_KEY and len(config.ADMIN_API_KEY) < config.ADMIN_KEY_MIN_LENGTH:
         log.warning("ADMIN_API_KEY короче %d символов: приём данных отключён, задайте длинный случайный ключ",
                     config.ADMIN_KEY_MIN_LENGTH)
@@ -78,7 +87,7 @@ errors.install(app)
 # Чужим сайтам (виджет, сайт министерства) открыто только чтение. POST и PATCH из браузера с другого сайта
 # не проходят: иначе любая страница могла бы тратить квоту ИИ руками своих посетителей.
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"],
-                   allow_headers=["Accept", "Content-Type", "If-None-Match"], expose_headers=["ETag", "X-Request-ID"])
+                   allow_headers=["Accept", "Content-Type", "If-None-Match", "X-Partner-Key"], expose_headers=["ETag", "X-Request-ID"])
 if config.ALLOWED_HOSTS:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=config.ALLOWED_HOSTS)
 app.middleware("http")(guard)  # защита и заголовки безопасности
@@ -86,6 +95,8 @@ app.middleware("http")(observe)  # добавлен последним, знач
 
 app.include_router(public_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
+app.include_router(accounts_router, prefix="/api/v1")
+app.include_router(users_admin_router, prefix="/api/v1")
 app.include_router(public_router, prefix="/api", include_in_schema=False)  # прежние адреса: виджеты и клиенты не ломаются
 
 
@@ -112,12 +123,21 @@ def index() -> FileResponse:
 
 
 @app.get("/event/{event_id}", include_in_schema=False)
-def event_page(request: Request, event_id: str, session: SessionDep) -> Response:
-    """Карточка события с постоянной ссылкой. Отменённое событие открывается с явной пометкой, черновик и неверный номер дают 404."""
+def event_page(request: Request, event_id: str, session: SessionDep, user: accounts.OptionalUser) -> Response:
+    """Карточка события с постоянной ссылкой. Отменённое событие открывается с явной пометкой, черновик и неверный номер дают 404.
+    Если вошёл человек, согласившийся вести историю, открытие карточки попадает в «Мои посещения». Страница от входа не зависит."""
     event = get_event(session, int(event_id)) if event_id.isdigit() and len(event_id) <= 10 and int(event_id) < 2**31 else None
     if event is None:
         return cached_html(request, render_not_found_page(), max_age=0, status_code=404)
+    if user is not None:
+        accounts.record_visit(session, user, event.id, "view")
     return cached_html(request, render_event_page(event), max_age=60)
+
+
+@app.get("/account", include_in_schema=False)
+def account_page() -> FileResponse:
+    """Кабинет: вход через Telegram, история посещений, подписки, сохранённые поиски, обращения, ключи. Данные грузятся из API."""
+    return FileResponse(STATIC_DIR / "account.html", headers={"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-cache"})
 
 
 @app.get("/plan", include_in_schema=False)

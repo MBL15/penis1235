@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Кабинет — Афиша культуры Башкортостана</title>
+  <script src="/static/boot.js"></script>
+  <link rel="stylesheet" href="/static/tailwind.css">
+  <link rel="stylesheet" href="/static/ui.css">
+</head>
+<body class="min-h-screen bg-art bg-[#eef2fb] bg-fixed text-ink antialiased">
+  <header class="mx-auto flex max-w-[900px] flex-wrap items-center justify-between gap-3 px-4 pt-4">
+    <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-white">← К афише</a>
+    <button type="button" id="logout" class="min-h-[40px] rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink shadow-surface hover:bg-white" hidden>Выйти</button>
+  </header>
+
+  <main class="mx-auto grid max-w-[900px] gap-4 px-4 pb-12 pt-5">
+    <h1 class="m-0 text-[length:clamp(1.6rem,4vw,2.2rem)] font-extrabold leading-[1.15] tracking-[-.02em]">Кабинет</h1>
+    <p id="notice" role="status" class="m-0 rounded-ctl bg-brand-tint px-4 py-3 font-semibold text-brand-ink" hidden></p>
+    <p id="problem" role="alert" class="m-0 rounded-ctl bg-bad-bg px-4 py-3 font-semibold text-bad" hidden></p>
+    <div id="loading" class="grid gap-3" aria-busy="true" aria-label="Загружаем кабинет">
+      <div class="ui-skeleton" style="height:110px"></div><div class="ui-skeleton" style="height:180px"></div><div class="ui-skeleton" style="height:140px"></div>
+    </div>
+
+    <section id="login" class="grid gap-4 rounded-panel border border-stroke bg-glass-hi p-6 shadow-surface w600:p-4" aria-labelledby="login-title" hidden>
+      <h2 id="login-title" class="m-0 text-[1.2rem] font-extrabold">Вход через Telegram</h2>
+      <p class="m-0 text-ink-2">Афиша работает и без входа. Кабинет нужен, чтобы история посещений, подписки и сохранённые поиски были с вами на любом устройстве. Паролей нет: вы входите своим аккаунтом Telegram, мы получаем только ваш номер в Telegram и имя.</p>
+      <div id="tg-login" class="min-h-[48px]"></div>
+      <button type="button" id="tg-miniapp" class="min-h-[48px] rounded-ctl bg-brand px-6 font-bold text-white shadow-cta tx-btn hover:bg-brand-hover" hidden>Войти как этот пользователь Telegram</button>
+      <p id="login-off" class="m-0 text-ink-3" hidden>Вход через Telegram на этом сервере не настроен.</p>
+      <p class="m-0 text-[.85rem] text-ink-3">История посещений по умолчанию выключена и включается только вашим согласием в кабинете. Кнопка входа загружает скрипт telegram.org: он видит ваш адрес, как при любом обращении к их сайту.</p>
+    </section>
+
+    <div id="app" class="grid gap-4" hidden></div>
+
+    <p class="mx-auto mt-2 max-w-[780px] text-center text-[.85rem] text-ink-3">Неофициальный сервис: не является сервисом Министерства культуры Республики Башкортостан и не связан с ним. Данные собраны из открытых источников, перед визитом уточняйте их у организатора.</p>
+  </main>
+  <script src="/static/ui.js" defer></script>
+  <script src="/static/account.js"></script>
+</body>
+</html>

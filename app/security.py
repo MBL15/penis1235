@@ -20,6 +20,7 @@ MAX_BODY = 1024 * 1024  # 1 МБ хватает любому JSON-запросу
 MAX_BODY_BULK = 5 * 1024 * 1024  # пачка до 500 событий
 BULK_PATHS = ("/api/events/bulk", "/api/v1/events/bulk", "/api/v1/admin/import")
 HEALTH_PATHS = ("/api/health", "/api/v1/health")
+PRIVATE_PATHS = ("/api/v1/me/", "/api/v1/auth/", "/api/v1/ministry/", "/api/v1/admin/")  # личные данные и вход: без кеша
 
 
 # ---------- адрес посетителя и лимиты ----------
@@ -57,8 +58,8 @@ class RateLimiter:
             host = forwarded.split(",")[-1].strip() or host
         return client_key(host)
 
-    def allow(self, key: str) -> bool:
-        """Засчитывает обращение и говорит, укладывается ли оно в лимит."""
+    def allow(self, key: str, limit: int | None = None) -> bool:
+        """Засчитывает обращение и говорит, укладывается ли оно в лимит (по умолчанию общий; у ключей Министерства свой)."""
         now = time.monotonic()
         with self._lock:
             if len(self.hits) > 5000:  # забываем давно ушедших посетителей, чтобы словарь не рос бесконечно
@@ -67,7 +68,7 @@ class RateLimiter:
             hits = self.hits[key]
             while hits and now - hits[0] > self.window:
                 hits.popleft()
-            if len(hits) >= self.limit:
+            if len(hits) >= (limit if limit is not None else self.limit):
                 return False
             hits.append(now)
             return True
@@ -87,6 +88,8 @@ class RateLimiter:
 ask_limiter = RateLimiter(limit=20)  # платный ИИ-эндпоинт
 api_limiter = RateLimiter(limit=config.API_RATE_LIMIT)  # всё API: защита от выкачивания и перегрузки
 auth_limiter = RateLimiter(limit=10, detail="Слишком много неудачных попыток, попробуйте через минуту")  # подбор ключа
+partner_limiter = RateLimiter(limit=600, detail="Превышен лимит запросов этого ключа в минуту")  # лимит у каждого ключа свой
+login_limiter = RateLimiter(limit=20, detail="Слишком много попыток входа, попробуйте через минуту")
 
 
 # ---------- бюджет вызовов модели ----------
@@ -136,6 +139,7 @@ CSP_PAGE = "; ".join((
     "font-src 'self'",
     "img-src 'self' data: https:",
     "connect-src 'self'",
+    "frame-src https://oauth.telegram.org",  # кнопка «Войти через Telegram» рисуется во фрейме Telegram
     "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org",
     "base-uri 'self'",
     "form-action 'self'",
@@ -174,8 +178,8 @@ def security_headers(path: str, *, https: bool) -> dict[str, str]:
         headers["X-Frame-Options"] = "DENY"
     if https:
         headers["Strict-Transport-Security"] = "max-age=31536000"
-    if path in ("/api/ask", "/api/v1/ask"):
-        headers["Cache-Control"] = "no-store"
+    if path in ("/api/ask", "/api/v1/ask", "/api/v1/me") or path.startswith(PRIVATE_PATHS):
+        headers["Cache-Control"] = "no-store"  # ответ зависит от того, кто вошёл: ни браузер, ни прокси его не хранят
     return headers
 
 
@@ -214,6 +218,13 @@ def body_too_large(request: Request) -> JSONResponse | None:
     return None
 
 
+def keyed_read(request: Request) -> bool:
+    """Чтение с ключом Министерства: общий лимит по адресу не применяется, вместо него считается лимит самого ключа
+    (app.accounts.partner_key, он же отклоняет неверный ключ). Административные методы под это не подпадают."""
+    return (request.method in SAFE_METHODS and "x-partner-key" in request.headers
+            and not request.url.path.startswith(("/api/v1/admin", "/api/admin")))
+
+
 async def guard(request: Request, call_next):
     """Единая точка защиты: размер тела, чужие POST, общий лимит API, заголовки безопасности на каждый ответ."""
     path = request.url.path
@@ -221,7 +232,7 @@ async def guard(request: Request, call_next):
     if response is None and path.startswith("/api/"):
         if cross_site_write(request):
             response = error_response(403, "Изменяющие запросы с других сайтов запрещены")
-        elif path not in HEALTH_PATHS and not api_limiter.allow(RateLimiter.client_ip(request)):
+        elif path not in HEALTH_PATHS and not keyed_read(request) and not api_limiter.allow(RateLimiter.client_ip(request)):
             response = error_response(429, api_limiter.detail, headers={"Retry-After": "60"})
     if response is None:
         response = await call_next(request)

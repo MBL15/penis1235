@@ -44,10 +44,10 @@ def test_every_admin_method_needs_a_key(client, admin_key, method, url):
 
 
 def test_session_names_the_moderator_and_the_old_single_key_still_works(client, admin_key, moderators, monkeypatch):
-    assert client.get("/api/v1/admin/session", headers=moderators["anna"]).json() == {"actor": "anna"}
-    assert client.get("/api/v1/admin/session", headers=moderators["boris"]).json() == {"actor": "boris"}
+    assert client.get("/api/v1/admin/session", headers=moderators["anna"]).json()["actor"] == "anna"
+    assert client.get("/api/v1/admin/session", headers=moderators["boris"]).json()["actor"] == "boris"
     monkeypatch.setattr(config, "ADMIN_API_KEY", "shared-key-" + "s" * 32)
-    assert client.get("/api/v1/admin/session", headers={"X-API-Key": "shared-key-" + "s" * 32}).json() == {"actor": "admin"}
+    assert client.get("/api/v1/admin/session", headers={"X-API-Key": "shared-key-" + "s" * 32}).json()["actor"] == "admin"
     assert client.get("/api/v1/admin/session", headers={"X-API-Key": "x" * 40}).status_code == 401
 
 

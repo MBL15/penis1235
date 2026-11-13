@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from .config import now_local
 from .formatting import is_demo
-from .models import Event, Subscription
+from .models import Event, Subscription, User
 from .normalize import CATEGORIES
 from .search import SearchFilters, _conditions
 
@@ -37,7 +37,8 @@ def add(session: Session, chat_id: int, city: str = "", category: str = "") -> s
         return "exists"
     if len(taken) >= MAX_PER_CHAT:
         return "limit"
-    session.add(Subscription(chat_id=chat_id, city=city, category=category))
+    owner = session.scalar(select(User.id).where(User.telegram_id == chat_id))  # есть аккаунт с этим номером: подписка его
+    session.add(Subscription(chat_id=chat_id, city=city, category=category, user_id=owner))
     session.commit()
     return "added"
 

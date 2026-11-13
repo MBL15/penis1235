@@ -6,7 +6,9 @@
     String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const STORE = 'afisha.admin.key'; // sessionStorage: ключ живёт только пока открыта вкладка
   const STATUS = { scheduled: 'Состоится', rescheduled: 'Перенесено', sold_out: 'Билеты проданы', cancelled: 'Отменено' };
-  const ACTIONS = { create: 'создание', update: 'обновление', merge: 'слияние источников', status: 'статус', publication: 'публикация', edit: 'правка', delete: 'удаление', feedback: 'обращение', import: 'импорт' };
+  const ACTIONS = { create: 'создание', update: 'обновление', merge: 'слияние источников', status: 'статус', publication: 'публикация', edit: 'правка', delete: 'удаление', feedback: 'обращение', import: 'импорт', role: 'роль', api_key: 'ключ Министерства' };
+  const ROLES = { user: 'Житель или гость', organizer: 'Организатор', moderator: 'Модератор', ministry: 'Министерство' };
+  const FB_STATUS = { new: 'Принято', in_progress: 'В работе', processed: 'Обработано' };
   const BTN = 'min-h-[36px] rounded-field border border-stroke bg-glass-hi px-3 text-[.9rem] font-semibold text-brand-ink hover:bg-white';
   const BTN_MAIN = 'min-h-[40px] rounded-ctl bg-brand px-4 font-bold text-white shadow-cta hover:bg-brand-hover';
   const FIELD = 'min-h-[40px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none';
@@ -14,6 +16,8 @@
   const TD = 'border-t border-line px-3 py-3 align-top';
 
   let key = '';
+  let via = 'key'; // key: вход по ключу X-API-Key; account: вход в аккаунт с ролью «модератор» (кука, ключ не нужен)
+  let quiet = false; // первая попытка войти по аккаунту не должна показывать ошибку «ключ не подошёл»
   let categories = [];
   let tab = 'queue';
   const view = { offset: 0, query: '', status: 'all', publication: 'all' };
@@ -23,9 +27,9 @@
   async function api(path, options = {}) {
     const response = await fetch(path, {
       ...options,
-      headers: { 'X-API-Key': key, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
+      headers: { ...(key ? { 'X-API-Key': key } : {}), ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
     });
-    if (response.status === 401) { logout('Ключ не подошёл или устарел. Войдите снова.'); throw new Error('Нужен вход'); }
+    if (response.status === 401) { logout(quiet ? '' : 'Ключ не подошёл или устарел. Войдите снова.'); throw new Error('Нужен вход'); }
     let data = null;
     try { data = await response.json(); } catch (_) { /* тело может быть пустым */ }
     if (!response.ok) {
@@ -53,11 +57,16 @@
 
   async function enter(candidate) {
     key = candidate;
+    quiet = !candidate; // без ключа пробуем вход по аккаунту: если его нет, просто показываем форму
     try {
       const session = await api('/api/v1/admin/session');
-      sessionStorage.setItem(STORE, key);
+      quiet = false;
+      via = session.via || 'key';
+      if (key) sessionStorage.setItem(STORE, key);
       $('#login').hidden = true; $('#app').hidden = false; $('#logout').hidden = false;
-      $('#actor').hidden = false; $('#actor').textContent = `Вы вошли как ${session.actor}`;
+      $('#tab-users').hidden = !session.can_manage_users; // роли и ключи Министерства выдаёт только владелец ключа
+      $('#actor').hidden = false;
+      $('#actor').textContent = via === 'account' ? `Вы вошли аккаунтом модератора (${session.actor})` : `Вы вошли как ${session.actor}`;
       categories = await fetch('/api/v1/categories').then((r) => r.json());
       $('#edit-form [name=category]').innerHTML = categories.map((c) => `<option value="${esc(c.slug)}">${esc(c.label)}</option>`).join('');
       refreshCounts();
@@ -82,7 +91,7 @@
     document.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
     view.offset = 0; view.query = '';
     view.publication = name === 'queue' ? 'draft' : 'all';
-    ({ queue: showEvents, events: showEvents, import: showImport, audit: showAudit, sync: showSync, feedback: showFeedback }[name])();
+    ({ queue: showEvents, events: showEvents, import: showImport, audit: showAudit, sync: showSync, feedback: showFeedback, users: showUsers }[name])();
   }
 
   const when = (iso) => (iso ? iso.replace('T', ' ').slice(0, 16) : '');
@@ -296,31 +305,145 @@
   // ---------- обращения ----------
   async function showFeedback() {
     $('#panel').innerHTML = `<div class="mb-4 flex flex-wrap items-end gap-3"><label class="grid gap-1 text-[.82rem] font-bold text-ink-3"><span>Показать</span>
-      <select id="f-status" class="${FIELD}"><option value="new">новые</option><option value="processed">обработанные</option><option value="all">все</option></select></label></div><div id="f-body"></div>`;
+      <select id="f-status" class="${FIELD}"><option value="new">новые</option><option value="in_progress">в работе</option><option value="processed">обработанные</option><option value="all">все</option></select></label></div><div id="f-body"></div>`;
     const load = async () => {
       try {
         const items = await api(`/api/v1/admin/feedback?status=${$('#f-status').value}&limit=100`);
         $('#f-body').innerHTML = items.length ? items.map((f) => `<article class="mb-3 grid gap-2 rounded-ctl border border-line bg-white/60 p-4" data-id="${Number(f.id)}">
-          <div class="flex flex-wrap items-center justify-between gap-2"><strong>${esc(f.kind_label)}</strong><span class="text-[.85rem] text-ink-3">${esc(when(f.created_at))}${f.event_id ? ` · <a class="underline" href="/event/${Number(f.event_id)}" target="_blank" rel="noopener noreferrer">событие №${Number(f.event_id)}</a>` : ''}</span></div>
+          <div class="flex flex-wrap items-center justify-between gap-2"><strong>${esc(f.kind_label)}${f.user_id ? ` <span class="rounded-full bg-brand-tint px-2 py-[2px] text-[.78rem] font-bold text-brand-ink">аккаунт${f.author_role && f.author_role !== 'user' ? `: ${esc(ROLES[f.author_role] || f.author_role)}` : ''}</span>` : ''}</strong><span class="text-[.85rem] text-ink-3">${esc(FB_STATUS[f.status] || f.status)} · ${esc(when(f.created_at))}${f.event_id ? ` · <a class="underline" href="/event/${Number(f.event_id)}" target="_blank" rel="noopener noreferrer">событие №${Number(f.event_id)}</a>` : ''}</span></div>
           <p class="m-0 whitespace-pre-wrap [overflow-wrap:anywhere]">${esc(f.message)}</p>
+          ${f.reply ? `<p class="m-0 whitespace-pre-wrap rounded-field bg-brand-tint px-3 py-2 text-brand-ink [overflow-wrap:anywhere]"><b>Ответ автору:</b> ${esc(f.reply)}</p>` : ''}
           <div class="flex flex-wrap items-center justify-between gap-2 text-[.88rem] text-ink-3"><span>${f.contact ? `Контакт: ${esc(f.contact)}` : 'Контакт не указан'}${f.status === 'processed' ? ` · обработал ${esc(f.processed_by)}` : ''}</span>
-            <button type="button" data-set="${f.status === 'new' ? 'processed' : 'new'}" class="${BTN}">${f.status === 'new' ? 'Отметить обработанным' : 'Вернуть в новые'}</button></div></article>`).join('')
+            <span class="flex flex-wrap gap-2">${f.status !== 'in_progress' && f.status !== 'processed' ? `<button type="button" data-set="in_progress" class="${BTN}">Взять в работу</button>` : ''}
+              <button type="button" data-set="${f.status === 'processed' ? 'new' : 'processed'}" class="${BTN}">${f.status === 'processed' ? 'Вернуть в новые' : 'Отметить обработанным'}</button></span></div>
+          ${f.user_id ? `<div class="grid gap-2"><textarea rows="2" maxlength="1000" placeholder="Ответ автору (придёт ему в Telegram от бота)" class="${FIELD} w-full py-2" data-reply></textarea>
+            <div><button type="button" data-send-reply class="${BTN}">Отправить ответ</button></div></div>` : '<p class="m-0 text-[.85rem] text-ink-3">Автор не входил в аккаунт: ответить ему из афиши нельзя, используйте контакт.</p>'}</article>`).join('')
           : '<p class="text-ink-3">Обращений нет.</p>';
       } catch (error) { if (error.message !== 'Нужен вход') say(error.message, true); }
     };
     $('#f-status').addEventListener('change', load);
     $('#f-body').addEventListener('click', async (event) => {
-      const button = event.target.closest('[data-set]');
+      const card = event.target.closest('[data-id]');
+      const button = event.target.closest('[data-set], [data-send-reply]');
       if (!button) return;
-      try { await patch(`/api/v1/admin/feedback/${button.closest('[data-id]').dataset.id}`, { status: button.dataset.set }); refreshCounts(); load(); } catch (error) { if (error.message !== 'Нужен вход') say(error.message, true); }
+      try {
+        if (button.dataset.set) {
+          await patch(`/api/v1/admin/feedback/${card.dataset.id}`, { status: button.dataset.set });
+        } else {
+          const reply = card.querySelector('[data-reply]').value.trim();
+          if (!reply) { say('Напишите ответ.', true); return; }
+          await patch(`/api/v1/admin/feedback/${card.dataset.id}`, { reply, status: 'processed' });
+          say('Ответ записан, бот отправит его автору.');
+        }
+        refreshCounts(); load();
+      } catch (error) { if (error.message !== 'Нужен вход') say(error.message, true); }
     });
     load();
   }
 
+  // ---------- пользователи, роли и ключи Министерства (только по ключу администратора) ----------
+  async function showUsers() {
+    const roleOptions = (current) => Object.entries(ROLES).map(([k, v]) => `<option value="${k}"${k === current ? ' selected' : ''}>${esc(v)}</option>`).join('');
+    $('#panel').innerHTML = `
+      <h2 class="m-0 mb-2 text-[1.1rem] font-extrabold">Роли</h2>
+      <p class="mb-3 mt-0 text-[.9rem] text-ink-3">Роль можно выдать заранее по номеру Telegram: она появится у человека при первом входе в кабинет. Номер человек видит в боте командой /start или у @userinfobot.</p>
+      <form id="role-form" class="mb-4 flex flex-wrap items-end gap-3">
+        <label class="grid gap-1 text-[.82rem] font-bold text-ink-3"><span>Номер Telegram</span><input id="r-id" type="number" min="1" required class="${FIELD}"></label>
+        <label class="grid gap-1 text-[.82rem] font-bold text-ink-3"><span>Имя (для списка)</span><input id="r-name" maxlength="100" class="${FIELD}"></label>
+        <label class="grid gap-1 text-[.82rem] font-bold text-ink-3"><span>Роль</span><select id="r-role" class="${FIELD}">${roleOptions('organizer')}</select></label>
+        <button type="submit" class="${BTN_MAIN}">Назначить</button>
+      </form>
+      <div class="mb-4 flex flex-wrap items-end gap-3">
+        <label class="grid gap-1 text-[.82rem] font-bold text-ink-3"><span>Показать</span><select id="u-role" class="${FIELD}"><option value="">все роли</option>${roleOptions('')}</select></label>
+        <label class="grid gap-1 text-[.82rem] font-bold text-ink-3"><span>Имя или номер</span><input id="u-q" type="search" class="${FIELD}"></label>
+        <button type="button" id="u-find" class="${BTN}">Найти</button>
+      </div>
+      <div id="u-body" class="overflow-x-auto"></div>
+      <h2 class="mb-2 mt-6 text-[1.1rem] font-extrabold">Ключи для встраивания (Министерство)</h2>
+      <p class="mb-3 mt-0 text-[.9rem] text-ink-3">Ключ только для чтения афиши, передаётся в заголовке X-Partner-Key. Свой лимит запросов в минуту вместо общего лимита по адресу. Сам ключ показывается один раз.</p>
+      <div id="k-new" class="mb-3 grid gap-2 rounded-ctl bg-brand-tint px-4 py-3" role="status" hidden></div>
+      <form id="key-form" class="mb-4 flex flex-wrap items-end gap-3">
+        <label class="grid gap-1 text-[.82rem] font-bold text-ink-3"><span>Название</span><input id="k-name" required maxlength="80" class="${FIELD}"></label>
+        <label class="grid gap-1 text-[.82rem] font-bold text-ink-3"><span>Запросов в минуту</span><input id="k-limit" type="number" min="1" max="6000" value="600" class="${FIELD}"></label>
+        <label class="grid gap-1 text-[.82rem] font-bold text-ink-3"><span>Владелец (номер Telegram)</span><input id="k-owner" type="number" min="1" class="${FIELD}" placeholder="необязательно"></label>
+        <button type="submit" class="${BTN_MAIN}">Выпустить ключ</button>
+      </form>
+      <div id="k-body" class="overflow-x-auto"></div>`;
+    const guarded = async (action) => { try { await action(); } catch (error) { if (error.message !== 'Нужен вход') say(error.message, true); } };
+
+    const loadUsers = () => guarded(async () => {
+      const params = new URLSearchParams({ limit: '100' });
+      if ($('#u-role').value) params.set('role', $('#u-role').value);
+      if ($('#u-q').value.trim()) params.set('q', $('#u-q').value.trim());
+      const users = await api(`/api/v1/admin/users?${params}`);
+      $('#u-body').innerHTML = users.length ? `<table class="w-full border-collapse"><thead><tr><th class="${TH}">Имя</th><th class="${TH}">Telegram</th><th class="${TH}">Роль</th><th class="${TH}">Входил</th><th class="${TH}"></th></tr></thead><tbody>${users.map((u) => `<tr data-user="${Number(u.id)}" data-tg="${Number(u.telegram_id)}">
+        <td class="${TD}">${esc(u.display_name || '—')}</td><td class="${TD}">${Number(u.telegram_id)}</td>
+        <td class="${TD}"><select data-role class="${FIELD}">${roleOptions(u.role)}</select></td>
+        <td class="${TD}">${u.signed_in ? esc(when(u.last_seen_at) || 'да') : 'роль ждёт первого входа'}</td>
+        <td class="${TD}">${u.role !== 'user' ? `<button type="button" data-revoke class="${BTN}">Отозвать доступ</button>` : ''}</td></tr>`).join('')}</tbody></table>` : '<p class="text-ink-3">Никого нет. Назначьте роль выше.</p>';
+    });
+
+    const loadKeys = () => guarded(async () => {
+      const keys = await api('/api/v1/admin/api-keys');
+      $('#k-body').innerHTML = keys.length ? `<table class="w-full border-collapse"><thead><tr><th class="${TH}">Ключ</th><th class="${TH}">Владелец</th><th class="${TH}">Лимит/мин</th><th class="${TH}">Запросов</th><th class="${TH}">Последний</th><th class="${TH}"></th></tr></thead><tbody>${keys.map((k) => `<tr data-key="${Number(k.id)}">
+        <td class="${TD}"><b>${esc(k.name)}</b><br><code>${esc(k.prefix)}…</code>${k.revoked_at ? ' · <span class="text-bad">отозван</span>' : ''}</td>
+        <td class="${TD}">${k.owner_user_id ? `аккаунт №${Number(k.owner_user_id)}` : '—'}</td>
+        <td class="${TD}">${k.revoked_at ? Number(k.rate_limit) : `<input data-limit type="number" min="1" max="6000" value="${Number(k.rate_limit)}" class="${FIELD} w-[100px]"> <button type="button" data-save-limit class="${BTN}">Сохранить</button>`}</td>
+        <td class="${TD}">${Number(k.requests_total)}</td><td class="${TD}">${esc(when(k.last_used_at) || '—')}</td>
+        <td class="${TD}">${k.revoked_at ? '' : `<button type="button" data-revoke-key class="${BTN}">Отозвать</button>`}</td></tr>`).join('')}</tbody></table>` : '<p class="text-ink-3">Ключей нет.</p>';
+    });
+
+    $('#role-form').addEventListener('submit', (submit) => {
+      submit.preventDefault();
+      guarded(async () => {
+        await post('/api/v1/admin/users', { telegram_id: Number($('#r-id').value), role: $('#r-role').value, display_name: $('#r-name').value.trim() });
+        $('#role-form').reset(); say('Роль назначена, действие записано в журнал.'); loadUsers();
+      });
+    });
+    $('#u-find').addEventListener('click', loadUsers);
+    $('#u-body').addEventListener('change', (event) => {
+      const select = event.target.closest('[data-role]');
+      if (!select) return;
+      guarded(async () => {
+        await post('/api/v1/admin/users', { telegram_id: Number(select.closest('[data-tg]').dataset.tg), role: select.value });
+        say('Роль изменена.'); loadUsers();
+      });
+    });
+    $('#u-body').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-revoke]');
+      if (!button || !confirm('Отозвать доступ? Роль станет «житель», все входы закроются, личные ключи отзовутся.')) return;
+      guarded(async () => { await post(`/api/v1/admin/users/${button.closest('[data-user]').dataset.user}/revoke`, {}); say('Доступ отозван.'); loadUsers(); loadKeys(); });
+    });
+    $('#key-form').addEventListener('submit', (submit) => {
+      submit.preventDefault();
+      guarded(async () => {
+        const body = { name: $('#k-name').value.trim(), rate_limit: Number($('#k-limit').value) || 600 };
+        if ($('#k-owner').value) body.owner_telegram_id = Number($('#k-owner').value);
+        const created = await post('/api/v1/admin/api-keys', body);
+        $('#key-form').reset(); $('#k-limit').value = '600';
+        const box = $('#k-new'); box.hidden = false;
+        box.innerHTML = `<b>Ключ «${esc(created.name)}»: скопируйте сейчас, потом он не покажется</b><code class="break-all rounded-field bg-white px-3 py-2">${esc(created.key)}</code>`;
+        loadKeys();
+      });
+    });
+    $('#k-body').addEventListener('click', (event) => {
+      const row = event.target.closest('[data-key]');
+      if (!row) return;
+      if (event.target.closest('[data-save-limit]')) {
+        guarded(async () => { await patch(`/api/v1/admin/api-keys/${row.dataset.key}`, { rate_limit: Number(row.querySelector('[data-limit]').value) }); say('Лимит изменён.'); loadKeys(); });
+      } else if (event.target.closest('[data-revoke-key]') && confirm('Отозвать ключ? Он перестанет работать сразу.')) {
+        guarded(async () => { await api(`/api/v1/admin/api-keys/${row.dataset.key}`, { method: 'DELETE' }); say('Ключ отозван.'); loadKeys(); });
+      }
+    });
+    loadUsers(); loadKeys();
+  }
+
   // ---------- запуск ----------
   document.querySelectorAll('[data-tab]').forEach((button) => button.addEventListener('click', () => open(button.dataset.tab)));
-  $('#logout').addEventListener('click', () => logout());
+  $('#logout').addEventListener('click', async () => {
+    if (via === 'account') { try { await fetch('/api/v1/auth/logout', { method: 'POST' }); } catch (_) { /* выход всё равно показываем */ } }
+    logout();
+  });
   $('#login-form').addEventListener('submit', (submit) => { submit.preventDefault(); enter($('#key').value.trim()); $('#key').value = ''; });
-  const saved = sessionStorage.getItem(STORE);
-  if (saved) enter(saved);
+  enter(sessionStorage.getItem(STORE) || ''); // ключ из этой вкладки или вход аккаунтом модератора
 })();
