@@ -7,7 +7,7 @@ from pathlib import Path
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["AGENT_MODE"] = "rules"
 # Рабочий .env (токен бота, ключ Gemini, адрес мини-приложения, прокси) не должен влиять на тесты.
-for _name in ("WEBAPP_URL", "TELEGRAM_BOT_TOKEN", "TELEGRAM_PROXY", "ADMIN_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY",
+for _name in ("WEBAPP_URL", "TELEGRAM_BOT_TOKEN", "TELEGRAM_PROXY", "ADMIN_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY",
               "REQUIRED_CHANNEL"):  # подписка на канал по умолчанию включена: в тестах бота её включаем явно
     os.environ[_name] = ""
 os.environ["PUBLIC_URL"] = "http://localhost:8000"

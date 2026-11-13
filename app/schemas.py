@@ -301,7 +301,7 @@ class AskOut(BaseModel):
     events: list[EventOut]
     needs_clarification: bool
     mode: Literal["llm", "rules"]
-    provider: str = Field("", description="Какая модель отвечала: gemini; пусто в режиме правил")
+    provider: str = Field("", description="Какой провайдер модели отвечал: gemini или groq; пусто в режиме правил")
     filters: dict = Field(default_factory=dict)
     trace_id: str = Field("", description="Ссылка на трассу ответа: GET /api/v1/traces/{trace_id} и страница /trace/{trace_id}")
     pending_actions: list["PendingActionOut"] = Field(

@@ -54,16 +54,23 @@ class AgentResult:
     needs_clarification: bool = False
     mode: str = "rules"
     filters: dict = field(default_factory=dict)
-    provider: str = ""  # gemini | "" (режим правил)
+    provider: str = ""  # gemini | groq | "" (режим правил)
     trace_id: str = ""  # ссылка на трассу ответа
     pending_actions: list[dict] = field(default_factory=list)  # предложенные действия: ждут подтверждения человеком
 
 
 # ---------- публичная точка входа ----------
 
-def llm_enabled(client=None) -> bool:
-    """Отвечает ли Gemini: режим не «rules» и есть ключ Google AI Studio (или передан готовый клиент, как в тестах)."""
-    return config.AGENT_MODE != "rules" and (client is not None or bool(config.GEMINI_API_KEY))
+def _providers(client=None, openai_client=None) -> list[str]:
+    """Провайдеры модели по порядку LLM_PROVIDERS: тот, у кого есть ключ (или передан готовый клиент, как в тестах)."""
+    available = {"gemini": client is not None or bool(config.GEMINI_API_KEY),
+                 "groq": openai_client is not None or bool(config.GROQ_API_KEY)}
+    return [p for p in config.LLM_PROVIDERS if available.get(p)]
+
+
+def llm_enabled(client=None, openai_client=None) -> bool:
+    """Отвечает ли модель: режим не «rules» и есть хотя бы один провайдер с ключом."""
+    return config.AGENT_MODE != "rules" and bool(_providers(client, openai_client))
 
 
 def ask(
@@ -72,6 +79,7 @@ def ask(
     history: list[dict] | None = None,
     *,
     client=None,
+    openai_client=None,
     now: datetime | None = None,
     context_event_ids: list[int] | None = None,
     chat_id: int | None = None,
@@ -94,19 +102,34 @@ def ask(
         trace.flag("offtopic", True)
         return _finish(session, trace, AgentResult(reply=OFFTOPIC_REPLY, mode="rules"))
 
-    if llm_enabled(client):
+    providers = _providers(client, openai_client) if config.AGENT_MODE != "rules" else []
+    if providers:
         if not llm_budget.acquire():
             trace.flag("fallback_reason", "budget")
             log.warning("Бюджет вызовов модели исчерпан (параллельность или суточный лимит), отвечаю по правилам")
         else:
             try:
-                result = _gemini_ask(session, message, history, client, now, trace, context_ids, chat_id)
-                result.provider = "gemini"
-                return _finish(session, trace, result)
-            except (AgentRefusal, AgentError) as exc:
-                # Демо не должно падать из-за сети, лимитов или отказа модели — отвечаем по правилам.
+                failures = []
+                for name in providers:
+                    try:
+                        if name == "gemini":
+                            result = _gemini_ask(session, message, history, client, now, trace, context_ids, chat_id)
+                        else:
+                            result = _openai_ask(session, message, history, openai_client, now, trace, context_ids, chat_id)
+                    except AgentError as exc:  # сеть, квота, перегрузка: пробуем следующего провайдера
+                        failures.append(f"{name}: {type(exc).__name__}: {str(exc)[:100]}")
+                        log.warning("%s не сработал (%s: %s)", name, type(exc).__name__, exc)
+                        trace.reset_attempt()
+                        continue
+                    result.provider = name
+                    if failures:
+                        trace.flag("provider_skipped", "; ".join(failures))
+                    return _finish(session, trace, result)
+                trace.flag("fallback_reason", "; ".join(failures))
+            except AgentRefusal as exc:
+                # Демо не должно падать из-за отказа модели — отвечаем по правилам.
                 trace.flag("fallback_reason", f"{type(exc).__name__}: {str(exc)[:120]}")
-                log.warning("Gemini не сработал (%s: %s), отвечаю по правилам", type(exc).__name__, exc)
+                log.warning("Модель отказала (%s), отвечаю по правилам", exc)
             finally:
                 llm_budget.release()
     return _finish(session, trace, _rules_ask(session, message, history, now, trace, context_ids, chat_id))
@@ -283,6 +306,60 @@ def _gemini_ask(session: Session, message: str, history: list[dict], client, now
     except (AgentRefusal, AgentError):
         raise
     except Exception as exc:  # сеть, лимиты, ошибки API: демо не должно падать, отвечаем по правилам
+        raise AgentError(f"{type(exc).__name__}: {exc}") from exc
+
+
+# ---------- режим llm: сервисы с API в формате OpenAI (Groq) ----------
+
+def _openai_ask(session: Session, message: str, history: list[dict], client, now: datetime, trace: TraceBuilder,
+                context_ids: list[int], chat_id: int | None) -> AgentResult:
+    """Тот же цикл «модель → инструменты», что у Gemini, но в формате OpenAI Chat Completions."""
+    from .llm_openai import groq_client, to_openai_tools
+
+    client = client or groq_client()
+    canary = new_canary()
+    model = config.GROQ_MODEL
+    trace.model, trace.prompt_version = model, PROMPT_VERSION
+    tools = to_openai_tools(TOOLS)
+    hint = f"\n[Служебная справка сервера: в прошлом ответе показаны события с id {context_ids}]" if context_ids else ""
+    messages = [{"role": "system", "content": build_system_prompt(session, now, canary)}, *_history_messages(history),
+                {"role": "user", "content": message + hint}]
+    ctx = ToolContext(session=session, now=now, trace=trace, chat_id=chat_id)
+    ctx.source_text.append(message + " " + " ".join(str(t.get("content", "")) for t in history[-MAX_HISTORY_TURNS:]))
+    deadline = time.monotonic() + config.LLM_TIME_BUDGET
+
+    try:
+        for _ in range(MAX_STEPS):
+            if time.monotonic() > deadline:
+                raise AgentError("превышено время на ответ")
+            data = client.chat(model=model, messages=messages, tools=tools)
+            usage = data.get("usage") or {}
+            trace.add_usage(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+            choice = (data.get("choices") or [None])[0]
+            if not choice:
+                raise AgentRefusal("модель не вернула ответ")
+            msg = choice.get("message") or {}
+            calls = msg.get("tool_calls") or []
+            if not calls:
+                if choice.get("finish_reason") == "content_filter":
+                    raise AgentRefusal("модель остановила ответ: content_filter")
+                return _checked(_result_from_final((msg.get("content") or "").strip(), ctx.seen, ctx.last_filters), ctx, canary)
+
+            messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
+            for call in calls:
+                function = call.get("function") or {}
+                try:
+                    args = json.loads(function.get("arguments") or "{}")
+                except ValueError:
+                    args = {}
+                result = run_tool(ctx, function.get("name", ""), _clean_args(args if isinstance(args, dict) else {}))
+                ctx.source_text.append(json.dumps(result, ensure_ascii=False))
+                payload = {"error": result["error"]} if "error" in result else {"result": result}
+                messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": json.dumps(payload, ensure_ascii=False)})
+        raise AgentError("слишком много шагов инструментов")
+    except (AgentRefusal, AgentError):
+        raise
+    except Exception as exc:  # сеть, лимиты (429), ошибки API: отвечаем по правилам
         raise AgentError(f"{type(exc).__name__}: {exc}") from exc
 
 

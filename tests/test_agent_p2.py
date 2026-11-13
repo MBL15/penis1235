@@ -110,7 +110,7 @@ def test_fallback_is_recorded_and_failed_attempt_tokens_are_still_counted(sessio
     client = FakeGemini(with_usage(model_reply(calls=[tool_call("search_events", {})]), 300, 10), RuntimeError("нет сети"))
     result = agent.ask(session, "в воскресенье с ребёнком", client=client, now=NOW)
     trace = trace_of(session, result)
-    assert result.mode == "rules" and trace.mode == "rules" and trace.flags["fallback_reason"].startswith("AgentError")
+    assert result.mode == "rules" and trace.mode == "rules" and trace.flags["fallback_reason"].startswith("gemini: AgentError")
     assert trace.input_tokens == 300  # потраченное до сбоя не теряется
 
 

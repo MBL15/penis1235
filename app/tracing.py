@@ -57,6 +57,11 @@ class TraceBuilder:
         self.input_tokens += max(0, int(input_tokens or 0))
         self.output_tokens += max(0, int(output_tokens or 0))
 
+    def reset_attempt(self) -> None:
+        """Первый провайдер не ответил, пробуем второго: его вызовы инструментов в трассу не идут. Токены остаются: они потрачены."""
+        self.steps.clear()
+        self.plan = {}
+
     def flag(self, name: str, value=True) -> None:
         self.flags[name] = value
 

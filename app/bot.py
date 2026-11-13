@@ -313,8 +313,8 @@ def agent_view(chat_id: int, text: str) -> View:
             chat_events[chat_id] = [e.id for e in result.events]
             _forget_oldest(chat_events)
         body = html.escape(result.reply)
-        # Развёрнутый ответ Gemini уже описывает каждое событие; короткий ответ правил дополняем списком карточек.
-        if result.events and result.provider != "gemini":
+        # Развёрнутый ответ модели уже описывает каждое событие; короткий ответ правил дополняем списком карточек.
+        if result.events and result.mode != "llm":
             body += "\n\n" + render_list(result.events, html=True)
         kb = InlineKeyboardBuilder()
         for number, event in enumerate(result.events, 1):

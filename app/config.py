@@ -79,6 +79,12 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", "")
 # Быстрая модель с вызовом функций. Старые (2.5) закрыты для новых ключей, алиас -latest тоже доступен не всем (404);
 # список моделей своего ключа: client.models.list().
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+# Второй провайдер, бесплатный тариф Groq (API в формате OpenAI). Ключ: https://console.groq.com/keys. Без ключа не используется.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+# Порядок провайдеров: если первый не ответил (квота, перегрузка, сеть), берётся следующий; потом режим правил.
+LLM_PROVIDERS = [p.strip() for p in os.getenv("LLM_PROVIDERS", "gemini,groq").split(",") if p.strip()]
 # Запасные модели через запятую: если основная вернула 429 (квота у каждой модели своя), 503 или 404, берётся следующая.
 GEMINI_FALLBACK_MODELS = [m.strip() for m in os.getenv("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash-lite,gemini-3.1-flash-lite").split(",") if m.strip()]
 # Сколько секунд не трогать модель после отказа по квоте или перегрузке (суточная квота сбрасывается раз в сутки, поэтому не гоняем её зря).
