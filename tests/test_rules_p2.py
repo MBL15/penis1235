@@ -86,3 +86,19 @@ def test_cancelled_event_is_mentioned_but_never_listed_as_current(session, add):
 def test_nothing_cancelled_means_no_note(session, add):
     add("Концерт «Вечер романсов»", datetime(2026, 11, 8, 18, 0), city="Уфа", category="concert", price_min=500)
     assert "Отменено" not in agent.ask(session, "концерты в Уфе", now=NOW).reply
+
+
+def test_time_duration_and_period_words_are_not_unknown_words():
+    for text in ("с ребёнком 7 лет в субботу, не дольше двух часов и недорого", "бесплатные выставки в Уфе до конца месяца",
+                 "ребёнку 8 лет, ехать не больше 20 минут, бюджет 1000 рублей на двоих"):
+        assert parse_query(text, SATURDAY).filters.q is None, text
+
+
+def test_question_about_cancellation_gets_a_status_answer(session, add):
+    add("Спектакль «Ревизор»", datetime(2026, 11, 8, 18, 0), city="Уфа", category="theatre", price_min=500)
+    reply = agent.ask(session, "Отменили ли спектакль в Уфе 8 ноября?", now=NOW).reply
+    assert "Отменённых событий по этому запросу в афише нет" in reply and "не всегда" in reply  # не «молчание = не отменили»
+    add("Спектакль «Мастер и Маргарита»", datetime(2026, 11, 8, 19, 0), city="Уфа", category="theatre", status="cancelled")
+    reply = agent.ask(session, "Отменили ли спектакль в Уфе 8 ноября?", now=NOW).reply
+    assert "Отменено: «Спектакль «Мастер и Маргарита»»" in reply and "Отменённых событий" not in reply
+    assert "Отменённых событий" not in agent.ask(session, "спектакли в Уфе 8 ноября", now=NOW).reply  # не спрашивали про отмену

@@ -280,7 +280,8 @@ CLARIFY = (
     "«бесплатные выставки в Уфе» или «концерты на выходных»."
 )
 _SUBSCRIPTION_WORDS = re.compile(r"\b(?:под|от)пи[сш]\w*")
-_UNSUBSCRIBE_WORDS = re.compile(r"\bотпи[сш]\w*|\bотмени\w*\s+подписк")
+_STATUS_ASK = re.compile(r"\bотмен\w*|\bперенес\w*|\bперенос\w*")
+_UNSUBSCRIBE_WORDS =re.compile(r"\bотпи[сш]\w*|\bотмени\w*\s+подписк")
 _MOVE_WORDS = re.compile(r"\b(?:перенес\w*|перекин\w*|измени\w*|смени\w*|поменя\w*|переключ\w*)\b")
 SUBSCRIPTION_HINT = (
     "Подписки на новые события оформляются в Telegram-боте: /subscribe, список подписок — /subscriptions, отписка — "
@@ -394,7 +395,11 @@ def _rules_ask(session: Session, message: str, history: list[dict], now: datetim
     asked_city, asked_word = bool(filters.city), filters.q
     events, total = search(session, filters, now)
     trace.step("search_events", filters.describe(), ids=[e.id for e in events], total=total)
-    caveats += _cancelled_note(session, filters, now, trace)  # до ослабления условий: речь о том, что человек спросил
+    cancelled = _cancelled_note(session, filters, now, trace)  # до ослабления условий: речь о том, что человек спросил
+    if not cancelled and _STATUS_ASK.search(norm_text(message)):
+        # «Отменили ли спектакль?»: молчание сошло бы за «не отменили». Говорим, что именно известно, а что нет.
+        cancelled = " Отменённых событий по этому запросу в афише нет, но источники сообщают об отменах не всегда: проверьте на сайте организатора."
+    caveats += cancelled
     # Угаданное слово — самое слабое из условий: если результатов нет, отбрасываем его первым и говорим об этом
     relaxations = sorted(RELAXATIONS, key=lambda r: r[0] != "q") if parsed.guessed_q else RELAXATIONS
     relaxed: list[tuple[str, str]] = []  # (ключ, название условия) в порядке ослабления

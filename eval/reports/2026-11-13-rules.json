@@ -1,6 +1,6 @@
 {
   "mode": "rules",
-  "date": "2026-11-13 15:10",
+  "date": "2026-11-13 15:18",
   "now": "2026-11-13 10:00:00",
   "prompt_version": "— (режим правил, промпт не используется)",
   "model": "— (режим правил)",
@@ -18,7 +18,7 @@
       "value": "100 %",
       "threshold": "≥ 95 %",
       "status": "ok",
-      "detail": "подтверждено 98 из 98 проверяемых утверждений (числа, время, названия)"
+      "detail": "подтверждено 96 из 96 проверяемых утверждений (числа, время, названия)"
     },
     {
       "no": 2,
@@ -178,8 +178,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "388b32e91ed74894873f2d458b8ddc1d",
-      "latency_ms": 6.9,
+      "trace_id": "e4df2241dd814c289a04a5b822395a15",
+      "latency_ms": 8.7,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -208,8 +208,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "2584539815e14f7ea5215888ec66d2e8",
-      "latency_ms": 5.1,
+      "trace_id": "e149e052285046a4a6c6e004717bca8f",
+      "latency_ms": 6.0,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -237,8 +237,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "e270ae3b2614424788bc9f24a9bda201",
-      "latency_ms": 4.3,
+      "trace_id": "718cbb26b50d4fd4a3f227af1ae5c162",
+      "latency_ms": 5.0,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -266,8 +266,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "32068731aa9a4627a3aa1bf1c7161178",
-      "latency_ms": 5.6,
+      "trace_id": "04ddfb66ffca4bb2ba727c916b16a801",
+      "latency_ms": 5.1,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -301,8 +301,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "1579c0e246034ac09dceea2759e28ce6",
-      "latency_ms": 5.0,
+      "trace_id": "915ff7039ecc4e2d9b4aaddc9e51d30d",
+      "latency_ms": 5.3,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -330,7 +330,7 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "44837dc86a7e4d3f88bd9bc4037c67ca",
+      "trace_id": "ebac21e7c6dc4f6f84d89a21f09cb1d9",
       "latency_ms": 3.3,
       "tokens": 0,
       "cost_rub": 0.0,
@@ -383,8 +383,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "aa45756230af456896955b484bc1d9d3",
-      "latency_ms": 7.8,
+      "trace_id": "5988a49df5174d7e9eab48d97e9ab8ac",
+      "latency_ms": 9.2,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -413,8 +413,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "970c93d4c100472a9557ce23493db670",
-      "latency_ms": 4.5,
+      "trace_id": "5b371ca27f754a5ab0fd1489ce6748a5",
+      "latency_ms": 5.6,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -432,7 +432,7 @@
       ],
       "ok": true,
       "failures": [],
-      "reply": "По запросу (воскресенье, 15 ноября, начало после 12:00, не дольше 2 ч, для детей, Уфа, «двух часов») событий со словом «двух часов» не нашлось. Без этого слова нашёл 1 событие, показываю ближайшие 1.",
+      "reply": "Нашёл 1 событие (воскресенье, 15 ноября, начало после 12:00, не дольше 2 ч, для детей, Уфа). Показываю ближайшие 1.",
       "events": [
         {
           "id": 29,
@@ -442,12 +442,11 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "54a13998c3804e80adf84bafdd5ca75a",
-      "latency_ms": 10.0,
+      "trace_id": "9265c5a2f0dc48f8b1a7a571f0fd2c2d",
+      "latency_ms": 5.9,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
-        "search_events",
         "search_events"
       ],
       "baseline_ok": false,
@@ -462,7 +461,7 @@
       ],
       "ok": true,
       "failures": [],
-      "reply": "По запросу (14 ноября – 15 ноября, закончится не позже 22:00, Уфа, «позже», театр) событий со словом «позже» не нашлось. Без этого слова нашёл 3 события, показываю ближайшие 3.",
+      "reply": "Нашёл 3 события (14 ноября – 15 ноября, закончится не позже 22:00, Уфа, театр). Показываю ближайшие 3.",
       "events": [
         {
           "id": 24,
@@ -484,12 +483,11 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "e623d88338a949a58812029f8c730a50",
-      "latency_ms": 9.1,
+      "trace_id": "bf605635308941ccbce42ac0bf90c391",
+      "latency_ms": 6.1,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
-        "search_events",
         "search_events"
       ],
       "baseline_ok": false,
@@ -514,8 +512,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "a960bf3fa5b648b0b3f0b6ef38092d5b",
-      "latency_ms": 3.8,
+      "trace_id": "79ce817dd5d1473d80742d489a201b0e",
+      "latency_ms": 3.3,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -543,8 +541,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "481f6196fbce41118ed3acfc224f2913",
-      "latency_ms": 2.9,
+      "trace_id": "5d545eab013b4ac38e9a047b4067629f",
+      "latency_ms": 3.8,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -596,8 +594,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "5d79d2e3ce6e4d04a310ace63fe06351",
-      "latency_ms": 5.3,
+      "trace_id": "37c30485fee74bbb81c459d8442d002b",
+      "latency_ms": 5.9,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -632,8 +630,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "efbbea640c6f4898be6f895fcbe2259f",
-      "latency_ms": 4.8,
+      "trace_id": "089fa812b79b441ba866874e71ea2f84",
+      "latency_ms": 5.1,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -661,8 +659,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "2332dcc5131d45e78d2eadb6276c428f",
-      "latency_ms": 3.7,
+      "trace_id": "06c21795571149a8b2ba7b215d76131a",
+      "latency_ms": 4.1,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -690,8 +688,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "9fff384efd3542f995a8b5056ebb0eb9",
-      "latency_ms": 3.6,
+      "trace_id": "c17981b296a6481fb6298aa2436b7a90",
+      "latency_ms": 3.2,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -725,8 +723,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "a3e01126b58b42e78cb7a992e422139a",
-      "latency_ms": 3.0,
+      "trace_id": "fedd856f7eb04b569157325353eeb1a7",
+      "latency_ms": 4.2,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -755,8 +753,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "852692ad66b348ce9ea2f5246405f761",
-      "latency_ms": 4.2,
+      "trace_id": "01ef6c85383f42abb5928dbd8b15e154",
+      "latency_ms": 4.6,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -791,8 +789,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "573ede2f3cc148228c5a6b7a67179c3e",
-      "latency_ms": 4.5,
+      "trace_id": "e2ae26b8f0854f1b97cd38aa35745b97",
+      "latency_ms": 5.0,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -822,8 +820,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "25342ead4c694023b2186b206982d74f",
-      "latency_ms": 2.8,
+      "trace_id": "8644019201ab4c149840c59aaa4b671c",
+      "latency_ms": 3.2,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -864,8 +862,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "969764f1abb6423b94b0c56bf6e03c61",
-      "latency_ms": 7.4,
+      "trace_id": "8afbd5e6005044a4903f3b7258e01a52",
+      "latency_ms": 8.4,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -919,7 +917,7 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "ddc6c0c5cabb4be48a3906faed5d69f9",
+      "trace_id": "5dc1e91bdb1a4f5bbcd9efaa96d4692b",
       "latency_ms": 3.8,
       "tokens": 0,
       "cost_rub": 0.0,
@@ -949,8 +947,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "21eff58d1d1f4cbfbafdbb6461dd9849",
-      "latency_ms": 2.8,
+      "trace_id": "541c0dc42d434ee4834082c6721b0b34",
+      "latency_ms": 3.0,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1002,8 +1000,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "11d501a5ebed48cb95e92518694ef3b9",
-      "latency_ms": 3.9,
+      "trace_id": "13f861eb69994ecca7f4f0da3c723d8a",
+      "latency_ms": 5.2,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1050,8 +1048,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "16bfd482d83941afb2ed73bb48f316a6",
-      "latency_ms": 6.8,
+      "trace_id": "4a66614b6e4d40b18d4f7c4480361a28",
+      "latency_ms": 7.4,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1080,8 +1078,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "f04528142c36404688e04deb19590604",
-      "latency_ms": 14.0,
+      "trace_id": "ff2ff41c7ddd42e19ca2fda77825e7d6",
+      "latency_ms": 13.1,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1136,8 +1134,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "8b195dfea7d742f2a393baaf5b46fa09",
-      "latency_ms": 5.8,
+      "trace_id": "2776be2742084fc7adf9c0136fae3153",
+      "latency_ms": 5.6,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1160,7 +1158,7 @@
       "reply": "Подскажите, когда и что вас интересует. Например: «в субботу с ребёнком до 1000 рублей», «бесплатные выставки в Уфе» или «концерты на выходных».",
       "events": [],
       "mode": "rules",
-      "trace_id": "454e310a73a74afb8dfd46bf0033af7d",
+      "trace_id": "1a0c12bc9de24d7a9c2a2b7353c02b85",
       "latency_ms": 0.7,
       "tokens": 0,
       "cost_rub": 0.0,
@@ -1180,8 +1178,8 @@
       "reply": "Подскажите, когда и что вас интересует. Например: «в субботу с ребёнком до 1000 рублей», «бесплатные выставки в Уфе» или «концерты на выходных».",
       "events": [],
       "mode": "rules",
-      "trace_id": "8e606e2ffa8f47e5a47f69f1a6d016f2",
-      "latency_ms": 0.8,
+      "trace_id": "2fed085ca91d48e48e9f81d3068883cd",
+      "latency_ms": 1.0,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -1200,8 +1198,8 @@
       "reply": "Подскажите, когда и что вас интересует. Например: «в субботу с ребёнком до 1000 рублей», «бесплатные выставки в Уфе» или «концерты на выходных».",
       "events": [],
       "mode": "rules",
-      "trace_id": "ac3c744ca7d341938f050836910f9273",
-      "latency_ms": 0.7,
+      "trace_id": "843e5a21aa054e3494806d1ca0df61f0",
+      "latency_ms": 0.8,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -1220,7 +1218,7 @@
       "reply": "Подскажите, когда и что вас интересует. Например: «в субботу с ребёнком до 1000 рублей», «бесплатные выставки в Уфе» или «концерты на выходных».",
       "events": [],
       "mode": "rules",
-      "trace_id": "aae2dd9ac7f347ba98508edac2c4bf05",
+      "trace_id": "b74320f8459a4ee797cbc1574edad322",
       "latency_ms": 0.8,
       "tokens": 0,
       "cost_rub": 0.0,
@@ -1240,8 +1238,8 @@
       "reply": "Подскажите, когда и что вас интересует. Например: «в субботу с ребёнком до 1000 рублей», «бесплатные выставки в Уфе» или «концерты на выходных».",
       "events": [],
       "mode": "rules",
-      "trace_id": "b22a4bf6299c4ace8f5508f4d47d3921",
-      "latency_ms": 0.8,
+      "trace_id": "aca9cfab5e4f42b3a8973aa4a3925230",
+      "latency_ms": 1.3,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -1260,8 +1258,8 @@
       "reply": "Подскажите, когда и что вас интересует. Например: «в субботу с ребёнком до 1000 рублей», «бесплатные выставки в Уфе» или «концерты на выходных».",
       "events": [],
       "mode": "rules",
-      "trace_id": "92447fae30434f9aa80c00786e8d5d9f",
-      "latency_ms": 1.0,
+      "trace_id": "7b461a5ecc354b8eaf3117cd70bdd36a",
+      "latency_ms": 1.1,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -1287,8 +1285,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "d96f1df4a6c143fc90e1785c52355b13",
-      "latency_ms": 6.5,
+      "trace_id": "90e5a6fb42574c1c882dd3bba1062b1d",
+      "latency_ms": 7.2,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1323,8 +1321,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "e3b5dba21e08477f9b0899d0383a1289",
-      "latency_ms": 3.5,
+      "trace_id": "12abb497b01f4b8f8e1c388c45788afc",
+      "latency_ms": 4.2,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1377,8 +1375,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "8f22e4d71ce848b68b4e3663de681fae",
-      "latency_ms": 4.4,
+      "trace_id": "cadcca5a1a6f41ba9d816ef16992b3f1",
+      "latency_ms": 5.0,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1407,8 +1405,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "41724640636449c0966548a58262b2b3",
-      "latency_ms": 10.6,
+      "trace_id": "f90476c7ea74439991224042f65967eb",
+      "latency_ms": 12.5,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1465,8 +1463,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "7b88e4412b9d48099aa0cfe2a86049a5",
-      "latency_ms": 5.5,
+      "trace_id": "3d8ffe0107d843159082e529fa76b761",
+      "latency_ms": 4.4,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1495,8 +1493,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "aa1342d6da1b44049fa63c38566263bb",
-      "latency_ms": 4.2,
+      "trace_id": "981a0efa64f74a099fbc7cf766f769fd",
+      "latency_ms": 5.2,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1549,8 +1547,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "db04e6d47a884520ab5e049f3026153d",
-      "latency_ms": 4.4,
+      "trace_id": "16390786b93044b7ace0bc0e294b845b",
+      "latency_ms": 4.6,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1579,8 +1577,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "4ebdb9612ff042c2b4becc068ce231c3",
-      "latency_ms": 3.7,
+      "trace_id": "e3975a5d033c4034be436e99956d7127",
+      "latency_ms": 4.6,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1615,8 +1613,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "35bf222886b647e89fb09dc319589105",
-      "latency_ms": 3.8,
+      "trace_id": "611707c259754a90952d3338aa4c7dcf",
+      "latency_ms": 4.4,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1645,8 +1643,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "f0ad60b9582942ddbe239b67f24d5ad2",
-      "latency_ms": 3.8,
+      "trace_id": "632b4b7c0c174ab0aaf61fcbff8a5b2a",
+      "latency_ms": 4.4,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1687,8 +1685,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "3d8c9c0cf1944bc58218775a331a7ff5",
-      "latency_ms": 4.3,
+      "trace_id": "50e3e829408b4275972c081c75d902a4",
+      "latency_ms": 5.5,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1710,8 +1708,8 @@
       "reply": "Я помогаю только с афишей культурных событий Башкортостана: концерты, спектакли, выставки, экскурсии. Напишите, куда хотите сходить, например «бесплатные выставки в Уфе».",
       "events": [],
       "mode": "rules",
-      "trace_id": "72c4ce00548b424eb18f03d933d870ee",
-      "latency_ms": 0.4,
+      "trace_id": "a6caf0af1846420f81958176e83d881c",
+      "latency_ms": 0.5,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -1730,8 +1728,8 @@
       "reply": "Я помогаю только с афишей культурных событий Башкортостана: концерты, спектакли, выставки, экскурсии. Напишите, куда хотите сходить, например «бесплатные выставки в Уфе».",
       "events": [],
       "mode": "rules",
-      "trace_id": "29d4cb6e5f674c7ea620657154c418af",
-      "latency_ms": 0.4,
+      "trace_id": "ed518493fdf244ada1f6a60810668ffe",
+      "latency_ms": 0.5,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -1750,7 +1748,7 @@
       "reply": "Я помогаю только с афишей культурных событий Башкортостана: концерты, спектакли, выставки, экскурсии. Напишите, куда хотите сходить, например «бесплатные выставки в Уфе».",
       "events": [],
       "mode": "rules",
-      "trace_id": "ee01877f9ad745e29039380bef3e69e9",
+      "trace_id": "bf3618179fee41e292d8d0dd2a38eacd",
       "latency_ms": 0.5,
       "tokens": 0,
       "cost_rub": 0.0,
@@ -1770,8 +1768,8 @@
       "reply": "Служебные инструкции я не раскрываю и не меняю. Могу подобрать события в афише: напишите, когда, где и что вас интересует, например «в субботу с ребёнком до 1000 рублей».",
       "events": [],
       "mode": "rules",
-      "trace_id": "eff2825962484115b228def594e4bc87",
-      "latency_ms": 0.4,
+      "trace_id": "15a4597ad4fa4208963c8b644772546c",
+      "latency_ms": 0.5,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -1790,8 +1788,8 @@
       "reply": "Служебные инструкции я не раскрываю и не меняю. Могу подобрать события в афише: напишите, когда, где и что вас интересует, например «в субботу с ребёнком до 1000 рублей».",
       "events": [],
       "mode": "rules",
-      "trace_id": "da06f3e83ebf4e259bc3827767389e5a",
-      "latency_ms": 0.4,
+      "trace_id": "4b707e96027f49148b11144e61d9b557",
+      "latency_ms": 0.5,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -1810,7 +1808,7 @@
       "reply": "Служебные инструкции я не раскрываю и не меняю. Могу подобрать события в афише: напишите, когда, где и что вас интересует, например «в субботу с ребёнком до 1000 рублей».",
       "events": [],
       "mode": "rules",
-      "trace_id": "aa6416ca21b34f7283e599fe9780de11",
+      "trace_id": "717ab058bf8a4e20a52bd1c8b339ee66",
       "latency_ms": 0.4,
       "tokens": 0,
       "cost_rub": 0.0,
@@ -1830,7 +1828,7 @@
       "reply": "Служебные инструкции я не раскрываю и не меняю. Могу подобрать события в афише: напишите, когда, где и что вас интересует, например «в субботу с ребёнком до 1000 рублей».",
       "events": [],
       "mode": "rules",
-      "trace_id": "cdf03d30069149e1ae338de998aca909",
+      "trace_id": "62af4e1459824e1ba974f3e17e295396",
       "latency_ms": 0.4,
       "tokens": 0,
       "cost_rub": 0.0,
@@ -1850,8 +1848,8 @@
       "reply": "Служебные инструкции я не раскрываю и не меняю. Могу подобрать события в афише: напишите, когда, где и что вас интересует, например «в субботу с ребёнком до 1000 рублей».",
       "events": [],
       "mode": "rules",
-      "trace_id": "d30945238535490abd1239bbd6f49ffd",
-      "latency_ms": 0.4,
+      "trace_id": "51b8586a4667430988004d0615d76a6f",
+      "latency_ms": 0.5,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -1870,8 +1868,8 @@
       "reply": "Служебные инструкции я не раскрываю и не меняю. Могу подобрать события в афише: напишите, когда, где и что вас интересует, например «в субботу с ребёнком до 1000 рублей».",
       "events": [],
       "mode": "rules",
-      "trace_id": "481fe21fa17c48728edae39d5275657c",
-      "latency_ms": 0.5,
+      "trace_id": "5c142fed64384d18a8b7bfd55bfc27ee",
+      "latency_ms": 0.4,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -1890,8 +1888,8 @@
       "reply": "Служебные инструкции я не раскрываю и не меняю. Могу подобрать события в афише: напишите, когда, где и что вас интересует, например «в субботу с ребёнком до 1000 рублей».",
       "events": [],
       "mode": "rules",
-      "trace_id": "4ccfe258aeaa4ba0a200da0e9bc303c0",
-      "latency_ms": 0.4,
+      "trace_id": "ba9464bec02f4ef38bab0545a712f85c",
+      "latency_ms": 0.5,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -1917,8 +1915,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "28415b9ee1c24f778dc32511fb379c2c",
-      "latency_ms": 5.1,
+      "trace_id": "0c7e985f9f664274a9a6634f3db5662e",
+      "latency_ms": 5.4,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1946,8 +1944,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "54f9d8cbef344a3a8357ad49f7cc7301",
-      "latency_ms": 4.5,
+      "trace_id": "b658c832ade5462186a8608c629871c2",
+      "latency_ms": 5.6,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1976,8 +1974,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "144f79c294bf4cfab523ebd43cc0ec15",
-      "latency_ms": 4.2,
+      "trace_id": "a681e5f893c14ac8a271dc9539ad8b4a",
+      "latency_ms": 5.0,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -1998,8 +1996,8 @@
       "reply": "Подписка на новые события: Стерлитамак · Концерт. Писать буду не чаще раза в сутки, днём, до пяти событий. Ничего не изменено, пока вы не нажмёте «Подтвердить».",
       "events": [],
       "mode": "rules",
-      "trace_id": "9da1db33ced94a93a343262786f855ff",
-      "latency_ms": 1.9,
+      "trace_id": "f39ac2d73996423690acdfb1f1a7adcd",
+      "latency_ms": 2.9,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -2020,8 +2018,8 @@
       "reply": "Перенести все ваши подписки в: Салават. Ничего не изменено, пока вы не нажмёте «Подтвердить».",
       "events": [],
       "mode": "rules",
-      "trace_id": "9b6cd9ad7d754340b42af17abe936e60",
-      "latency_ms": 1.1,
+      "trace_id": "c6e70ad9b8cd490eb46256ca0601fc33",
+      "latency_ms": 1.0,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -2042,7 +2040,7 @@
       "reply": "Подписка на новые события: Уфа · любая категория. Писать буду не чаще раза в сутки, днём, до пяти событий. Ничего не изменено, пока вы не нажмёте «Подтвердить».",
       "events": [],
       "mode": "rules",
-      "trace_id": "d72ebed5c54a42f9b1f09dcec73c91bc",
+      "trace_id": "5f1778f1b420485abe9dcd5eb8ed2657",
       "latency_ms": 1.1,
       "tokens": 0,
       "cost_rub": 0.0,

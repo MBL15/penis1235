@@ -1,6 +1,6 @@
 {
   "mode": "rules",
-  "date": "2026-11-13 15:10",
+  "date": "2026-11-13 15:18",
   "now": "2026-11-13 10:00:00",
   "prompt_version": "— (режим правил, промпт не используется)",
   "model": "— (режим правил)",
@@ -146,8 +146,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "2b4359f436984604ac20f6e70a8cdac1",
-      "latency_ms": 6.3,
+      "trace_id": "8d90f88938e24886b99e4f5783c38afe",
+      "latency_ms": 6.8,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -175,8 +175,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "3274a7cbd47c406e93f24a631a763d87",
-      "latency_ms": 4.8,
+      "trace_id": "1f3bf650148d4ce780a2797f051b9264",
+      "latency_ms": 6.0,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -210,8 +210,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "07c71a73479d485b83a27ab31e8835b2",
-      "latency_ms": 5.5,
+      "trace_id": "d44ef4cac0694e679eea40ab9d94d544",
+      "latency_ms": 5.9,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -245,8 +245,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "4504d50c63d245618b7aea86f1dbbf50",
-      "latency_ms": 4.8,
+      "trace_id": "98bacc2f748e4a428bad012848838c10",
+      "latency_ms": 5.1,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -274,8 +274,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "1fd57cfd8a36464ab2b52af551fb03f9",
-      "latency_ms": 5.0,
+      "trace_id": "b065cd8c7ac2492ba94ae2b44997f9c0",
+      "latency_ms": 5.3,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -296,8 +296,8 @@
       "reply": "Подскажите, когда и что вас интересует. Например: «в субботу с ребёнком до 1000 рублей», «бесплатные выставки в Уфе» или «концерты на выходных».",
       "events": [],
       "mode": "rules",
-      "trace_id": "c0e03f9101cc4ade992d465b3df4e836",
-      "latency_ms": 0.7,
+      "trace_id": "b86d2a2d15f74c9990124630c96ae5f6",
+      "latency_ms": 0.8,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -347,8 +347,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "bff155ff02b14e0287a6530c75dafa99",
-      "latency_ms": 17.9,
+      "trace_id": "9b65ad3cddda44d79642caa9368c2ece",
+      "latency_ms": 18.8,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -388,8 +388,8 @@
         }
       ],
       "mode": "rules",
-      "trace_id": "1f2773ad14154d50a53b63d67a1f32a7",
-      "latency_ms": 4.6,
+      "trace_id": "9667912e8be34722b7253d8f705b5123",
+      "latency_ms": 5.4,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [
@@ -412,8 +412,8 @@
       "reply": "Служебные инструкции я не раскрываю и не меняю. Могу подобрать события в афише: напишите, когда, где и что вас интересует, например «в субботу с ребёнком до 1000 рублей».",
       "events": [],
       "mode": "rules",
-      "trace_id": "48d61956137e43d4b3db975a3034ee33",
-      "latency_ms": 0.5,
+      "trace_id": "dac85223e3884537b64c482898bca506",
+      "latency_ms": 0.4,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
@@ -432,8 +432,8 @@
       "reply": "Подскажите, когда и что вас интересует. Например: «в субботу с ребёнком до 1000 рублей», «бесплатные выставки в Уфе» или «концерты на выходных».",
       "events": [],
       "mode": "rules",
-      "trace_id": "cd8923f40e4c4ad5a32d75afd3e209e3",
-      "latency_ms": 1.0,
+      "trace_id": "f4c73478914548c1b4ced9e1bb2ae15b",
+      "latency_ms": 1.1,
       "tokens": 0,
       "cost_rub": 0.0,
       "tools": [],
