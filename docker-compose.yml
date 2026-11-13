@@ -51,5 +51,18 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8000}
       LOAD_SAMPLE_DATA: "0"
 
+  # Сбор по расписанию (data/schedule.json): docker compose --profile sync up. Источники должны быть доступны с этой машины.
+  scheduler:
+    <<: *hardening
+    profiles: ["sync"]
+    command: ["python", "-m", "app.scheduler"]
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      HOME: /tmp
+      DATABASE_URL: sqlite:////data/afisha.db
+      LOAD_SAMPLE_DATA: "0"
+
 volumes:
   afisha-data:

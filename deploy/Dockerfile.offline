@@ -12,5 +12,6 @@ COPY app app
 COPY alembic.ini alembic.ini
 COPY migrations migrations
 COPY data/venues.json data/venues.json
+COPY data/schedule.json data/schedule.json
 USER 1000
 CMD ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1", "--no-server-header", "--no-access-log"]

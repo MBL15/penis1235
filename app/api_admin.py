@@ -17,6 +17,7 @@ from .pipeline import process_batch
 from .schemas import (
     AdminSessionOut,
     AuditEntryOut,
+    SyncRunOut,
     BulkIngestResult,
     ErrorOut,
     EventList,
@@ -121,6 +122,19 @@ def import_file(payload: ImportIn, session: SessionDep, actor: Annotated[str, De
         rejected=[RejectedRecord(row=r.row, title=r.title, reasons=r.reasons) for r in report.rejected],
         total=report.total, events=[event_to_out(events[i], now) for i in ids if i in events],
     )
+
+
+@router.get("/sync-runs", response_model=list[SyncRunOut], summary="Запуски сбора по расписанию (app/scheduler.py)")
+def sync_runs(session: SessionDep, job: Annotated[str | None, Query(max_length=64)] = None,
+              limit: Annotated[int, Query(ge=1, le=200)] = 30) -> list[SyncRunOut]:
+    from sqlalchemy import select
+
+    from .models import SyncRun
+
+    stmt = select(SyncRun).order_by(SyncRun.started_at.desc(), SyncRun.id.desc()).limit(limit)
+    if job:
+        stmt = stmt.where(SyncRun.job == job)
+    return [SyncRunOut.model_validate(r, from_attributes=True) for r in session.scalars(stmt)]
 
 
 @router.get("/audit", response_model=list[AuditEntryOut], summary="Журнал изменений: кто, когда и что изменил")

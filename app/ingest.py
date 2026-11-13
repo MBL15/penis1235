@@ -12,7 +12,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from . import audit
+from . import audit, vanished
 from .config import now_local
 from .dedup import find_duplicate, make_dedup_key, worse_status
 from .models import Event
@@ -208,11 +208,13 @@ def upsert_detailed(session: Session, data: EventIn, *, actor: str = "system") -
     same_source = any(s.get("name") == data.source for s in existing.sources or [])
     digest = record_hash(data)
     if same_source and any(s.get("name") == data.source and digest in s.get("hashes", []) for s in existing.sources or []):
+        vanished.revive(session, existing, data.source, actor=actor)  # вернулось после пропажи: снять помету
         _mark_seen(existing, data.source)  # та же запись того же источника: ничего не меняем, только «видели сейчас»
         session.commit()
         return existing, "unchanged", False
     before = audit.snapshot(existing)
     changed = _merge(existing, data, category=category, age=age, kids=kids, same_source=same_source, language=language)
+    vanished.revive(session, existing, data.source, actor=actor)
     _remember_hash(existing, data.source, digest)
     existing.source_hash = existing.source_hash or digest
     if changed:

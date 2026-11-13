@@ -13,6 +13,7 @@ COPY alembic.ini alembic.ini
 COPY migrations migrations
 COPY data/sample_events.json data/sample_events.json
 COPY data/venues.json data/venues.json
+COPY data/schedule.json data/schedule.json
 COPY deploy/entrypoint.sh entrypoint.sh
 USER 1000
 EXPOSE 8000

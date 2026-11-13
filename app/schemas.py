@@ -322,6 +322,24 @@ class ImportIn(BaseModel):
     publish: bool = Field(True, description="false: новые события сохраняются черновиками для модерации")
 
 
+class SyncRunOut(BaseModel):
+    id: int
+    job: str
+    started_at: datetime
+    finished_at: datetime | None
+    status: str = Field(description="running | ok | failed")
+    fetched: int
+    created: int
+    merged: int
+    unchanged: int
+    skipped: int
+    published: int = Field(description="из очереди проверки в выдачу")
+    queued: int = Field(description="осталось в очереди модерации")
+    vanished: int = Field(description="пропало из источника")
+    revived: int = Field(description="вернулось в источник")
+    error: str
+
+
 class AdminSessionOut(BaseModel):
     actor: str
 

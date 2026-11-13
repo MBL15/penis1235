@@ -82,7 +82,7 @@
     document.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
     view.offset = 0; view.query = '';
     view.publication = name === 'queue' ? 'draft' : 'all';
-    ({ queue: showEvents, events: showEvents, import: showImport, audit: showAudit, feedback: showFeedback }[name])();
+    ({ queue: showEvents, events: showEvents, import: showImport, audit: showAudit, sync: showSync, feedback: showFeedback }[name])();
   }
 
   const when = (iso) => (iso ? iso.replace('T', ' ').slice(0, 16) : '');
@@ -252,6 +252,20 @@
     };
     $('#a-find').addEventListener('click', load);
     load();
+  }
+
+  // ---------- сбор по расписанию ----------
+  const SYNC_STATUS = { ok: 'ок', failed: 'сбой', running: 'идёт' };
+  async function showSync() {
+    $('#panel').innerHTML = '<div id="s-body"></div>';
+    try {
+      const runs = await api('/api/v1/admin/sync-runs?limit=50');
+      $('#s-body').innerHTML = runs.length
+        ? `<div class="overflow-x-auto"><table class="w-full border-collapse"><thead><tr><th class="${TH}">Когда</th><th class="${TH}">Задача</th><th class="${TH}">Итог</th><th class="${TH}">Получено</th><th class="${TH}">Создано</th><th class="${TH}">Обновлено</th><th class="${TH}">Опубликовано</th><th class="${TH}">В очереди</th><th class="${TH}">Пропало</th><th class="${TH}">Вернулось</th></tr></thead><tbody>`
+          + runs.map((r) => `<tr><td class="${TD}">${esc(when(r.started_at))}</td><td class="${TD}">${esc(r.job)}</td><td class="${TD}"><span class="${r.status === 'failed' ? 'font-bold text-warn' : 'font-semibold text-ok'}">${esc(SYNC_STATUS[r.status] || r.status)}</span>${r.error ? `<div class="text-[.82rem] text-ink-3">${esc(r.error)}</div>` : ''}</td><td class="${TD}">${Number(r.fetched)}</td><td class="${TD}">${Number(r.created)}</td><td class="${TD}">${Number(r.merged)}</td><td class="${TD}">${Number(r.published)}</td><td class="${TD}">${Number(r.queued)}</td><td class="${TD}">${Number(r.vanished)}</td><td class="${TD}">${Number(r.revived)}</td></tr>`).join('')
+          + '</tbody></table></div>'
+        : '<p class="text-ink-3">Запусков пока не было. Расписание: <code>python -m app.scheduler</code>, подробности в docs/04.</p>';
+    } catch (error) { if (error.message !== 'Нужен вход') say(error.message, true); }
   }
 
   // ---------- импорт ----------

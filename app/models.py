@@ -166,3 +166,25 @@ class PendingAction(Base):
     summary: Mapped[str] = mapped_column(Text, default="")  # что будет сделано, текст пишет сервер, а не модель
     status: Mapped[str] = mapped_column(String(12), default="pending")  # pending | confirmed | cancelled
     trace_id: Mapped[str] = mapped_column(String(32), default="")
+
+
+class SyncRun(Base):
+    """Один запуск сбора из внешнего источника (app/scheduler.py): когда, что получили и чем кончилось."""
+
+    __tablename__ = "sync_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job: Mapped[str] = mapped_column(String(64), index=True)  # имя задачи из data/schedule.json
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=now_local, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(12), default="running")  # running | ok | failed
+    fetched: Mapped[int] = mapped_column(Integer, default=0)
+    created: Mapped[int] = mapped_column(Integer, default=0)
+    merged: Mapped[int] = mapped_column(Integer, default=0)
+    unchanged: Mapped[int] = mapped_column(Integer, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, default=0)
+    published: Mapped[int] = mapped_column(Integer, default=0)  # из очереди проверки в выдачу
+    queued: Mapped[int] = mapped_column(Integer, default=0)  # осталось в очереди модерации
+    vanished: Mapped[int] = mapped_column(Integer, default=0)  # пропало из источника
+    revived: Mapped[int] = mapped_column(Integer, default=0)  # вернулось в источник
+    error: Mapped[str] = mapped_column(String(400), default="")
