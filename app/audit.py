@@ -11,6 +11,7 @@ from .observability import request_id_var
 TRACKED = (
     "title", "description", "category", "city", "venue", "address", "start_at", "end_at", "series_until", "price_min",
     "price_max", "age_limit", "kids_friendly", "url", "image_url", "status", "publication", "duration_min", "language",
+    "review_reason",
 )
 
 

@@ -71,8 +71,9 @@ def _store_raw(session: Session, payload: dict, outcome: str, event_id: int | No
     return raw
 
 
-def process_record(session: Session, record, *, actor: str = "system", publish: bool = True) -> Result:
-    """Одна запись (словарь или EventIn). publish=False: новое событие сохраняется черновиком для модерации."""
+def process_record(session: Session, record, *, actor: str = "system", publish: bool = True, auto_queue: bool = False) -> Result:
+    """Одна запись (словарь или EventIn). publish=False: новое событие сохраняется черновиком для модерации.
+    auto_queue=True (вместе с publish=False): черновик ждёт автоматической проверки (app/verify.py), а не ручной."""
     payload = _payload(record)
     try:
         data = record if isinstance(record, EventIn) else EventIn.model_validate(payload)
@@ -85,6 +86,8 @@ def process_record(session: Session, record, *, actor: str = "system", publish: 
     if not publish:
         data = data.model_copy(update={"publication": "draft"})
     event, outcome, cross = upsert_detailed(session, data, actor=actor)
+    if auto_queue and not publish and outcome == "created":
+        event.review_reason = "авто: ждёт проверки"
     _store_raw(session, payload, outcome, event.id)
     session.commit()
     return Result(outcome, event, cross)

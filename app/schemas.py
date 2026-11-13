@@ -142,6 +142,7 @@ class EventOut(BaseModel):
     source_type: str | None = Field(None, description="manual | import | api | page | rss — откуда пришла первая запись")
     verified_at: datetime | None = Field(None, description="когда карточку последний раз проверяли; null — не проверялась")
     confidence: float | None = Field(None, description="уверенность 0–1: ссылка, дата, полнота, число источников")
+    review_reason: str | None = Field(None, description="почему карточка в очереди модерации (только у черновиков)")
 
 
 class SubscriptionIn(BaseModel):

@@ -98,3 +98,8 @@ LOCAL_TZ = timezone(timedelta(hours=5))
 def now_local() -> datetime:
     """Текущее местное время (Уфа) без tzinfo: так же хранятся даты событий."""
     return datetime.now(LOCAL_TZ).replace(tzinfo=None)
+
+# --- Проверка карточек перед публикацией и по расписанию (app/verify.py) ---
+VERIFY_MIN_CONFIDENCE = float(os.getenv("VERIFY_MIN_CONFIDENCE", "0.55"))  # ниже: карточка остаётся в очереди модерации
+VERIFY_STALE_DAYS = int(os.getenv("VERIFY_STALE_DAYS", "14"))  # опубликованные события перепроверяются раз в столько дней
+VERIFY_LINK_TIMEOUT = float(os.getenv("VERIFY_LINK_TIMEOUT", "8"))  # секунд на проверку одной ссылки

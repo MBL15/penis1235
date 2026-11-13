@@ -19,13 +19,14 @@ from collections import Counter
 from collections.abc import Callable, Iterable
 
 from .pipeline import process_record
+from .verify import verify_pending
 from .sources import culture_ru, kassir, kudago, sites, yandex_afisha
 from .sources.base import BlockedError, SourceError
 
 SOURCES = ("culture-ru", "yandex-afisha", "kassir", "kudago", "sites")
 
 
-def sync_records(session, records, *, actor: str = "sync") -> dict[str, int]:
+def sync_records(session, records, *, actor: str = "sync", queue: bool = False) -> dict[str, int]:
     """Как ingest_records, но битая запись не обрывает всю загрузку.
 
     created: новое событие; merged: то же событие обновлено (в том числе уточнено другим источником);
@@ -33,7 +34,7 @@ def sync_records(session, records, *, actor: str = "sync") -> dict[str, int]:
     unchanged: ничего нового; skipped: запись не прошла проверку."""
     stats = {"created": 0, "merged": 0, "unchanged": 0, "skipped": 0, "cross_source": 0}
     for record in records:
-        result = process_record(session, record, actor=actor)  # сырая запись и журнал пишутся внутри
+        result = process_record(session, record, actor=actor, publish=not queue, auto_queue=queue)  # сырая запись и журнал пишутся внутри
         if result.status == "rejected":
             stats["skipped"] += 1
             print(f"пропущено: {record.get('title')!r}: {result.reasons[0]}", file=sys.stderr)
@@ -63,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--delay", type=float, default=1.5, help="culture.ru: пауза между страницами, секунд")
     parser.add_argument("--dry-run", action="store_true", help="ничего не записывать, показать первые записи")
     parser.add_argument("--drop-demo", action="store_true", help="удалить демо-события перед загрузкой")
+    parser.add_argument("--no-verify", action="store_true", help="публиковать новые события сразу, без проверки (по умолчанию они ждут проверки)")
+    parser.add_argument("--no-links", action="store_true", help="проверка без обхода ссылок: только дата, полнота и дубли")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     # Кириллица в консоли Windows: без этого печать падает на кодировке cp1251/cp866.
@@ -103,7 +106,11 @@ def main(argv: list[str] | None = None) -> int:
         with SessionLocal() as session:
             if args.drop_demo and name == names[0]:
                 print(f"Удалено демо-событий: {reset_demo(session)}")
-            stats = sync_records(session, records, actor=f"sync:{name}")
+            stats = sync_records(session, records, actor=f"sync:{name}", queue=not args.no_verify)
+            if not args.no_verify:  # карточки попадают в выдачу только после проверки, спорные остаются в очереди модерации
+                verified = verify_pending(session, links=not args.no_links)
+                print(f"[{name}] проверка: опубликовано {verified.published}, в очереди модерации {verified.queued} "
+                      f"(битых ссылок {verified.link_dead})")
         totals.update(stats)
         print(
             f"[{name}] получено {len(records)}; создано {stats['created']}, обновлено/склеено {stats['merged']} "

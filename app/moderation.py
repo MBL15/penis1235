@@ -63,6 +63,9 @@ def set_publication(session: Session, event: Event, publication: str, actor: str
     if event.publication != publication:
         before = audit.snapshot(event)
         event.publication = publication
+        # Решение модератора окончательное: публикация снимает причину очереди, а возвращённая в черновики карточка
+        # получает ручную причину и автоматикой больше не публикуется.
+        event.review_reason = None if publication == "published" else "модератор: снято с публикации"
         audit.record(session, actor, "publication", event.id, audit.diff(before, audit.snapshot(event)))
         session.commit()
     return event

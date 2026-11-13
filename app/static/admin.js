@@ -124,7 +124,8 @@
     return `<tr data-id="${Number(e.id)}">
       <td class="${TD}">${Number(e.id)}</td>
       <td class="${TD}"><a class="font-bold text-brand-ink underline underline-offset-2" href="/event/${Number(e.id)}" target="_blank" rel="noopener noreferrer">${esc(e.title)}</a>
-        <div class="mt-1 text-[.85rem] text-ink-3">${esc(e.category_label)} · источников: ${Number(e.source_count) || 0}</div></td>
+        <div class="mt-1 text-[.85rem] text-ink-3">${esc(e.category_label)} · источников: ${Number(e.source_count) || 0}${e.confidence != null ? ` · уверенность ${Number(e.confidence).toFixed(2)}` : ''}</div>
+        ${draft && e.review_reason ? `<div class="mt-1 text-[.85rem] font-semibold text-warn">${esc(e.review_reason)}</div>` : ''}</td>
       <td class="${TD}">${esc(when(e.start_at))}<div class="text-[.85rem] text-ink-3">${esc(place)}</div></td>
       <td class="${TD}"><span class="${draft ? 'font-bold text-warn' : 'font-semibold text-ok'}">${draft ? 'Черновик' : 'Опубликовано'}</span>
         <select data-act="status" aria-label="Статус события ${Number(e.id)}" class="mt-1 block ${FIELD} !min-h-[34px] !text-[.9rem]">${Object.entries(STATUS).map(([k, v]) => `<option value="${k}"${k === e.status ? ' selected' : ''}>${v}</option>`).join('')}</select></td>

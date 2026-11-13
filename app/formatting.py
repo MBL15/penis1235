@@ -112,6 +112,7 @@ def event_to_out(event: Event, now: datetime | None = None) -> EventOut:
         source_type=event.source_type,
         verified_at=event.verified_at,
         confidence=event.confidence,
+        review_reason=event.review_reason if event.publication == "draft" else None,
         status_label=STATUSES.get(event.status, event.status),
         publication=event.publication or "published",
         is_past=is_past(event, now),
