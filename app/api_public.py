@@ -49,6 +49,7 @@ from .schemas import (
     VenueOut,
 )
 from .tracing import get_trace
+from .hints import empty_hint
 from .search import WHEN_VALUES, SearchFilters, facets, get_event, resolve_when, search, venues
 from .security import ask_limiter
 
@@ -121,7 +122,8 @@ def list_events(
     )
     now = now_local()
     events, total = search(session, filters, now)
-    page = EventList(items=[event_to_out(e, now) for e in events], total=total, limit=limit, offset=offset)
+    page = EventList(items=[event_to_out(e, now) for e in events], total=total, limit=limit, offset=offset,
+                     hint=empty_hint(session, filters, now) if total == 0 and offset == 0 else None)
     return cached_json(request, page, max_age=TTL_LIST)
 
 

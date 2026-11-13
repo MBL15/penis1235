@@ -61,7 +61,7 @@ def test_quick_filters_and_menu():
     else:
         raise AssertionError("ожидали ValueError")
     buttons = [b for row in bot.menu_markup("Уфа").inline_keyboard for b in row]
-    assert len(buttons) == len(bot.QUICK) + 3  # быстрые фильтры, город, категории и «Подписки»
+    assert len(buttons) == len(bot.QUICK) + 5  # быстрые фильтры, город, категории, «Подписки», дата и цена
     assert "fs:list" in [b.callback_data for b in buttons]
 
 

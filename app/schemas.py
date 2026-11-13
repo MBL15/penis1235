@@ -146,6 +146,7 @@ class EventOut(BaseModel):
 
 class EventList(BaseModel):
     items: list[EventOut]
+    hint: str | None = Field(None, description="при пустой выдаче: что искали и какое условие можно ослабить")
     total: int
     limit: int
     offset: int

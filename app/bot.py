@@ -9,6 +9,7 @@ import re
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -27,6 +28,7 @@ from .agent import ask
 from .config import now_local
 from .db import SessionLocal, init_db
 from .formatting import render_event, render_list
+from .hints import empty_hint
 from .models import Event, Subscription
 from .normalize import CATEGORIES
 from .search import SearchFilters, facets, get_event, resolve_when, search
@@ -208,9 +210,61 @@ def quick_filters(kind: str, city: str | None, offset: int = 0) -> SearchFilters
         f.kids = True
     elif kind.startswith("cat_"):
         f.category = kind[4:]
+    elif kind.startswith("date_"):  # выбранная дата: date_2026-11-14
+        try:
+            f.date_from = f.date_to = date.fromisoformat(kind[5:])
+        except ValueError:
+            raise ValueError(f"неизвестная дата {kind}") from None
+    elif kind.startswith("price_") and kind[6:].isdigit():  # порог цены: price_1000
+        f.price_max = int(kind[6:])
     else:
         raise ValueError(f"неизвестный фильтр {kind}")
     return f
+
+
+PRICE_STEPS = (300, 500, 1000, 2000)
+DATE_DAYS = 14
+
+
+def kind_title(kind: str) -> str:
+    if kind in QUICK:
+        return QUICK[kind]
+    if kind.startswith("date_"):
+        return f"📅 {date.fromisoformat(kind[5:]):%d.%m.%Y}"
+    if kind.startswith("price_"):
+        return f"💰 до {kind[6:]} ₽"
+    return CATEGORIES.get(kind.removeprefix("cat_"), kind)
+
+
+def valid_kind(kind: str) -> bool:
+    try:
+        quick_filters(kind, None)
+    except ValueError:
+        return False
+    return kind in QUICK or kind.startswith(("cat_", "date_", "price_")) and (
+        not kind.startswith("cat_") or kind[4:] in CATEGORIES)
+
+
+def dates_markup() -> InlineKeyboardMarkup:
+    """Выбор даты: ближайшие две недели кнопками, без ручного ввода."""
+    kb = InlineKeyboardBuilder()
+    today = now_local().date()
+    weekdays = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
+    for step in range(DATE_DAYS):
+        day = today + timedelta(days=step)
+        kb.button(text=f"{day:%d.%m} {weekdays[day.weekday()]}", callback_data=f"l:date_{day.isoformat()}:0")
+    kb.button(text="🏠 Меню", callback_data="menu")
+    kb.adjust(4)
+    return kb.as_markup()
+
+
+def prices_markup() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for step in PRICE_STEPS:
+        kb.button(text=f"до {step} ₽", callback_data=f"l:price_{step}:0")
+    kb.button(text="🏠 Меню", callback_data="menu")
+    kb.adjust(2)
+    return kb.as_markup()
 
 
 def menu_markup(city: str | None = None) -> InlineKeyboardMarkup:
@@ -220,7 +274,9 @@ def menu_markup(city: str | None = None) -> InlineKeyboardMarkup:
     kb.button(text=f"📍 {city or 'Вся республика'}", callback_data="cities")
     kb.button(text="🗂 Категории", callback_data="cats")
     kb.button(text="🔔 Подписки", callback_data="fs:list")
-    kb.adjust(3, 3, 3)
+    kb.button(text="📅 Выбрать дату", callback_data="pick:date")
+    kb.button(text="💰 Цена", callback_data="pick:price")
+    kb.adjust(3, 3, 3, 2)
     markup = kb.as_markup()
     if config.WEBAPP_URL:  # главная кнопка: открыть афишу внутри Telegram
         markup.inline_keyboard.insert(0, [InlineKeyboardButton(text="🗓 Открыть афишу", web_app=WebAppInfo(url=config.WEBAPP_URL))])
@@ -242,11 +298,11 @@ def clip(text: str) -> str:
 
 def list_view(session: Session, kind: str, city: str | None, offset: int = 0) -> View:
     events, total = search(session, quick_filters(kind, city, offset))
-    title = QUICK.get(kind) or CATEGORIES.get(kind.removeprefix("cat_"), kind)
+    title = kind_title(kind)
     where = f" · {city}" if city else ""
     if not events:
-        return View(f"<b>{html.escape(title)}{html.escape(where)}</b>\nНичего не нашлось. Попробуйте другой фильтр или город.",
-                    menu_markup(city))
+        hint = empty_hint(session, quick_filters(kind, city))
+        return View(f"<b>{html.escape(title)}{html.escape(where)}</b>\nНичего не нашлось. {html.escape(hint)}", menu_markup(city))
     head = f"<b>{html.escape(title)}{html.escape(where)}</b> · найдено {total}\n\n"
     return View(clip(head + render_list(events, html=True)), list_markup(events, kind, offset, total, city))
 
@@ -269,8 +325,15 @@ def event_view(session: Session, event_id: int) -> View | None:
     if event is None:
         return None
     kb = InlineKeyboardBuilder()
+    shown = set()
     if (event.url or "").startswith(("http://", "https://")):
-        kb.button(text="🔗 Источник и билеты", url=event.url)
+        kb.button(text="🎟 Билеты и организатор", url=event.url)
+        shown.add(event.url)
+    for source in (event.sources or [])[:3]:  # источники отдельно от билетов: откуда взято событие
+        link = source.get("url") or ""
+        if link.startswith(("http://", "https://")) and link not in shown:
+            kb.button(text=f"🔗 Источник: {str(source.get('name', ''))[:24]}", url=link)
+            shown.add(link)
     if config.PUBLIC_URL.startswith("https://"):  # Telegram не принимает кнопки с адресом без HTTPS
         kb.button(text="📄 Карточка с постоянной ссылкой", url=f"{config.PUBLIC_URL}/event/{event.id}")
     kb.button(text="🏠 Меню", callback_data="menu")
@@ -400,6 +463,18 @@ async def on_cities(call: CallbackQuery) -> None:
     await call.answer()
 
 
+@router.callback_query(F.data == "pick:date")
+async def on_pick_date(call: CallbackQuery) -> None:
+    await call.message.answer("Выберите дату:", reply_markup=dates_markup())
+    await call.answer()
+
+
+@router.callback_query(F.data == "pick:price")
+async def on_pick_price(call: CallbackQuery) -> None:
+    await call.message.answer("Цена билета не выше:", reply_markup=prices_markup())
+    await call.answer()
+
+
 @router.callback_query(F.data == "cats")
 async def on_cats(call: CallbackQuery) -> None:
     with SessionLocal() as session:
@@ -434,9 +509,9 @@ STALE = "Кнопка устарела. Откройте меню: /start"
 @router.callback_query(F.data.startswith("l:"))
 async def on_list(call: CallbackQuery) -> None:
     # Данные кнопки приходят от клиента и могут быть подделаны: разбираем строго.
-    match = re.fullmatch(r"l:([a-z_]{1,40}):([0-9]{1,6})", call.data or "")
+    match = re.fullmatch(r"l:([a-z0-9_-]{1,40}):([0-9]{1,6})", call.data or "")
     kind = match.group(1) if match else ""
-    if not match or not (kind in QUICK or kind.removeprefix("cat_") in CATEGORIES):
+    if not match or not valid_kind(kind):
         await call.answer(STALE, show_alert=True)
         return
     with SessionLocal() as session:

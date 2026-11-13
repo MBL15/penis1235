@@ -305,6 +305,7 @@
       const html = data.items.map((event, i) => cardHtml(event, bentoClass(state.rendered + i), i)).join('');
       if (append) results.insertAdjacentHTML('beforeend', html);
       else results.innerHTML = html || `<div class="${EMPTY}"><p class="m-0 text-[1.05rem]">По этим условиям ничего не нашлось.</p>
+          ${data.hint ? `<p class="m-0 max-w-[34rem] text-[.92rem]">${esc(data.hint)}</p>` : ''}
           <button type="button" class="${CHIP}" id="empty-reset">Сбросить фильтры</button></div>`;
       reveal(results);
       state.offset += data.items.length;

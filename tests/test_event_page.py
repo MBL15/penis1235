@@ -148,7 +148,7 @@ def test_site_cards_and_widget_link_to_the_card_page():
 def test_bot_card_offers_the_permanent_link_only_over_https(monkeypatch, session, event):
     monkeypatch.setattr(config, "PUBLIC_URL", "http://localhost:8000")
     texts = [b.text for row in bot.event_view(session, event.id).markup.inline_keyboard for b in row]
-    assert "🔗 Источник и билеты" in texts and not any("Карточка" in t for t in texts)
+    assert "🎟 Билеты и организатор" in texts and not any("Карточка" in t for t in texts)
     monkeypatch.setattr(config, "PUBLIC_URL", "https://afisha.example")
     buttons = [b for row in bot.event_view(session, event.id).markup.inline_keyboard for b in row]
     card = next(b for b in buttons if "Карточка" in b.text)

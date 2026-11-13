@@ -126,6 +126,7 @@ def render_event(event: Event, *, html: bool = False, details: bool = False) -> 
     esc = _html.escape if html else (lambda s: s)
     title = esc(event.title)
     lines = [f"<b>{title}</b>" if html else title]
+    lines.append(f"🏷 {esc(CATEGORIES.get(getattr(event, 'category', 'other'), CATEGORIES['other']))}")
     lines.append(f"📅 {esc(when_text(event))}")
     place = ", ".join(p for p in (event.venue, event.city) if p)
     if details and event.address:
