@@ -5,9 +5,12 @@ import calendar
 import re
 from dataclasses import dataclass, field
 from datetime import date, time, timedelta
+from difflib import get_close_matches
 
 from .formatting import MONTHS_GEN, WEEKDAYS_FULL, duration_text
-from .normalize import CATEGORIES, CATEGORY_STEMS, KIDS_STEMS, canonical_language, find_city_fuzzy, find_city_in_text, norm_text
+from .normalize import (
+    CATEGORIES, CATEGORY_STEMS, CITY_FORMS, KIDS_STEMS, canonical_language, find_city_fuzzy, find_city_in_text, norm_text,
+)
 from .safety import has_event_signal
 from .search import SearchFilters, resolve_when
 
@@ -16,7 +19,7 @@ MONTH_MAP = {
     "январ": 1, "феврал": 2, "март": 3, "апрел": 4, "мая": 5, "май": 5, "июн": 6,
     "июл": 7, "август": 8, "сентябр": 9, "октябр": 10, "ноябр": 11, "декабр": 12,
 }
-FAMILY_WORDS = KIDS_STEMS + ("сын", "доч", "внук", "племянн")
+FAMILY_WORDS = KIDS_STEMS + ("сын", "доч", "внук", "племянн", "семьи", "семье", "семьей", "семью")  # не «семь»: это число
 # «Джаз» или «балет» — это не просто «концерт» или «театр», а конкретная тема: слово идёт в поиск по тексту, а не теряется
 # за категорией. Если пользователь назвал и общее слово («концерт джаза»), категория тоже учитывается.
 KEYWORD_STEMS = ("джаз", "балет", "оперн", "опера", "оперы", "оперу", "оперет", "мюзикл", "симфон", "стендап", "кукол", "органн")
@@ -50,6 +53,55 @@ _DISTANCE_RE = re.compile(
     r"ехать\s+(?:не\s+)?(?:больше|более|дольше|до)?\s*\d+\s*мин\w*|добираться[^,.?!]*|\bв\s+центре\b|\bближе\s+к\s+\w+|\bрядом\b|\bпоближе\b"
     r"|\bнедалеко\b|\bблизко\b|\d+\s*км\b")
 
+# Слова, которые сами ничего не ищут: просьбы, вопросы, связки, общие названия «события» и «цены». Всё остальное, что правила не
+# разобрали («Земфира», «цирк», «керлинг»), ищется как слово в названии и описании, а если не нашлось, об этом говорится прямо.
+FILLER_STEMS = (
+    "куда", "пойти", "пойд", "идти", "сходи", "посмотр", "послуш", "посовет", "порекоменд", "подскаж", "покаж", "найд", "хоч",
+    "хотим", "хотел", "можно", "нужн", "надо", "когда", "каки", "каку", "котор", "мероприят", "событ", "афиш", "вариант",
+    "ближайш", "нибуд", "пожалуйста", "также", "тоже", "друг", "рубл", "тысяч", "минут", "билет", "стоит", "сколько", "рядом",
+    "город", "республик", "башкир", "башкорт", "сейчас", "сегодня", "завтра", "послезавтра", "выходн", "недел", "месяц",
+    "вечер", "утром", "днем", "ночью", "дешев", "подешев", "недорог", "бюджет", "бесплатн", "дорог", "интересн", "весел",
+    "хорош", "классн", "красив", "необычн", "любой", "любое", "любые", "любую", "времен", "начал", "закончи", "заканч",
+    "длитель", "дольше", "дальше", "ближе", "ехать", "добира", "двоих", "троих", "вдвоем", "втроем", "семь", "компани",
+    "развлеч", "отдохн", "заняться", "провести", "чтобы", "чтоб", "этот", "этом", "этих", "этой", "есть", "будет", "были",
+    "была", "было", "быть", "очень", "самое", "самый", "самая", "лучш", "последн", "первое", "первый", "первая", "похож",
+    "такое", "такой", "такие", "хотя", "либо", "если", "потом", "после", "перед", "через", "всего", "всех", "всем", "ещё", "еще",
+    "что", "где", "как", "для", "про", "мне", "нам", "или", "ниже", "выше", "более", "менее", "пока", "уже",
+    "дорож", "расскаж", "известн", "выполн", "написан", "описани", "соревнован", "скажи", "ответь", "интересу", "ищу", "искать",
+    "поищи", "всей", "всю", "весь", "вся", "девушк", "парн", "друз", "подруг", "родител", "бабушк", "дедушк", "коллег", "супруг",
+    "женой", "мужем", "состо", "проход", "пройд", "отмен", "перенес", "перенос", "пользовател",  # бот дописывает к вопросу служебную справку «(Город пользователя: …)»
+)
+# Слова категорий целиком: по ним исправляются опечатки («спектакь» → спектакль)
+CATEGORY_WORDS = {
+    "спектакль": "theatre", "театр": "theatre", "мюзикл": "theatre", "концерт": "concert", "филармония": "concert",
+    "выставка": "exhibition", "экспозиция": "exhibition", "фестиваль": "festival", "лекция": "lecture", "воркшоп": "lecture",
+    "экскурсия": "excursion", "прогулка": "excursion", "киносеанс": "cinema",
+}
+_WORD_VOCAB = tuple(CATEGORY_WORDS) + tuple(WEEKDAY_STEMS) + tuple(LANG_PREPOSITIONAL.values())
+
+
+def _known_stems() -> tuple[str, ...]:
+    stems = list(WEEKDAY_STEMS) + list(MONTH_MAP) + list(FAMILY_WORDS) + list(KEYWORD_STEMS) + list(FILLER_STEMS)
+    stems += [s for group in CATEGORY_STEMS.values() for s in group]
+    stems += [form for forms in CITY_FORMS.values() for form in forms]
+    stems += ["башкирск", "татарск", "русск", "английск", "чувашск", "марийск", "язык", "бесплатн", "даром", "free"]
+    return tuple(dict.fromkeys(stems))
+
+
+KNOWN_STEMS = _known_stems()
+
+
+def residual_words(text: str, skip: set[str] | None = None) -> list[str]:
+    """Слова запроса, которых правила не поняли и которые не похожи на опечатку известного слова: «Земфира», «цирк», «керлинг»."""
+    out = []
+    for word in norm_text(text).split():
+        if len(word) < 4 or word.isdigit() or word in (skip or ()) or word.startswith(KNOWN_STEMS):
+            continue
+        if get_close_matches(word, _WORD_VOCAB, n=1, cutoff=0.84):
+            continue
+        out.append(word)
+    return out[:3]
+
 
 @dataclass
 class Parsed:
@@ -62,6 +114,28 @@ class Parsed:
     intent: bool = False  # есть ли намерение искать события (город сам по себе его не даёт)
     similar_to: int | None = None  # «а что-нибудь похожее»: номер события из прошлого ответа
     refinements: list[str] = field(default_factory=list)  # «другие варианты», «в другой день»
+    guessed_q: bool = False  # слово для поиска угадано (правила его не поняли): при нехватке результатов отбрасывается первым
+
+
+_MONTH_PREPOSITIONS = ("в", "на", "за", "до", "с", "по", "к")
+
+
+def month_only(words: list[str]) -> int | None:
+    """«В декабре», «на январь»: месяц без числа. «9 мая» сюда не попадает: там число, и это точная дата."""
+    for i, word in enumerate(words):
+        if i == 0 or words[i - 1] not in _MONTH_PREPOSITIONS:
+            continue
+        for stem, number in MONTH_MAP.items():
+            if word.startswith(stem) and len(word) <= len(stem) + 3:
+                return number
+    return None
+
+
+def month_range(month: int, today: date) -> tuple[date, date]:
+    """Весь месяц (ближайший такой), для текущего — с сегодняшнего дня."""
+    year = today.year if month >= today.month else today.year + 1
+    first, last = date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])
+    return (today if first < today else first), last
 
 
 def _next_weekday(today: date, target: int) -> date:
@@ -218,6 +292,8 @@ def parse_query(text: str, today: date) -> Parsed:
         f.date_from, f.date_to = resolve_when("today", today)
     elif "конца месяца" in low or "этом месяце" in low or "до конца месяц" in low:
         f.date_from, f.date_to = today, today.replace(day=calendar.monthrange(today.year, today.month)[1])
+    elif month_only(words):
+        f.date_from, f.date_to = month_range(month_only(words), today)
     elif any(w.startswith("выходн") for w in words):
         f.date_from, f.date_to = resolve_when("weekend", today)
     elif any(w.startswith("недел") for w in words):
@@ -273,12 +349,14 @@ def parse_query(text: str, today: date) -> Parsed:
 
     # --- где и что ---
     corrections: list[str] = []
+    typed: set[str] = set()  # опечатки, которые уже исправлены: в «непонятые слова» они не попадают
     f.city = find_city_in_text(text)
     if f.city is None:
         fuzzy = find_city_fuzzy(text)
         if fuzzy:
             f.city = fuzzy[0]
             corrections.append(f"«{fuzzy[1]}» → {fuzzy[0]}")
+            typed.update(norm_text(fuzzy[1]).split())
     keywords = [w for w in words if w.startswith(KEYWORD_STEMS)]
     if keywords:
         f.q = " ".join(keywords[:3])
@@ -287,14 +365,29 @@ def parse_query(text: str, today: date) -> Parsed:
         if slug != "kids" and any(w.startswith(stems) for w in generic):
             f.category = slug
             break
+    if f.category is None:  # «спектакь» → спектакль: опечатка в названии категории
+        for word in generic:
+            hit = get_close_matches(word, list(CATEGORY_WORDS), n=1, cutoff=0.84) if len(word) >= 6 else []
+            if hit:
+                f.category = CATEGORY_WORDS[hit[0]]
+                corrections.append(f"«{word}» → {hit[0]}")
+                typed.add(word)
+                break
 
     specific = bool(
         f.date_from or f.kids or f.free_only or f.price_max is not None or f.category or f.q or f.time_from or f.time_to
         or f.ends_by or f.max_duration or f.language
     )
+    unknown = []
+    if not f.q and (specific or f.city):
+        # Незнакомое слово («Земфира», «цирк») не выбрасываем: ищем его в названиях и описаниях. Не нашлось — скажем об этом.
+        unknown = residual_words(text, typed)
+        if unknown:
+            f.q = " ".join(unknown)
     return Parsed(
         filters=f, notes=describe(f, today, price_label), recognized=specific or bool(f.city), corrections=corrections,
-        unsupported=find_unsupported(text), price_label=price_label, intent=specific or has_event_signal(text),
+        unsupported=find_unsupported(text), price_label=price_label, intent=specific or bool(unknown) or has_event_signal(text),
+        guessed_q=bool(unknown),
     )
 
 
@@ -312,9 +405,12 @@ def parse_conversation(user_messages: list[str], today: date, context_ids: list[
     corrections: list[str] = []
     unsupported: list[str] = []
     price_label = None
+    guessed_q = False
     for message in user_messages:
         part = parse_query(message, today)
         recognized, intent = recognized or part.recognized, intent or part.intent
+        if part.filters.q is not None:
+            guessed_q = part.guessed_q
         for name in ("city", "category", "q", "date_from", "date_to", "price_max", "age", "kids", "max_duration", "ends_by", "language"):
             value = getattr(part.filters, name)
             if value is not None:
@@ -345,10 +441,14 @@ def parse_conversation(user_messages: list[str], today: date, context_ids: list[
             merged.exclude_ids = list(context_ids)
             refinements.append("другие варианты")
         elif _CHEAP_RE.search(last):
-            merged.exclude_ids = list(context_ids)
+            # «А подешевле» без суммы: показать другие, подешевле. С суммой («до 1500») это уточнение условия, и уже показанные
+            # события, которые подходят, должны остаться в выдаче.
+            named = parse_query(user_messages[-1], today).filters
+            if named.price_max is None and not named.free_only:
+                merged.exclude_ids = list(context_ids)
     parsed_recognized = recognized or bool(refinements)
     return Parsed(
         filters=merged, notes=describe(merged, today, price_label), recognized=parsed_recognized, corrections=corrections,
         unsupported=unsupported, price_label=price_label, intent=intent or bool(refinements), similar_to=similar_to,
-        refinements=refinements,
+        refinements=refinements, guessed_q=guessed_q,
     )

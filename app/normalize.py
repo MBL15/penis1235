@@ -179,7 +179,7 @@ def parse_age(value) -> int:
     return int(match.group()) if match else 0
 
 
-KIDS_STEMS = ("детск", "детям", "детей", "дети", "ребен", "малыш", "кукол", "семейн")
+KIDS_STEMS = ("детск", "детям", "детей", "дети", "детьм", "детиш", "ребен", "малыш", "кукол", "семейн")
 
 
 def is_kids_text(text: str) -> bool:

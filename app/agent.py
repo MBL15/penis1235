@@ -18,6 +18,7 @@ from . import agent_actions, config
 from .agent_prompt import MAX_SHOWN, PROMPT_VERSION, build_system_prompt
 from .agent_tools import MAX_TOOL_CALLS, TOOLS, ToolContext, filters_from_tool_input, run_tool
 from .config import now_local
+from .formatting import when_text
 from .models import Event
 from .normalize import find_city_in_text, norm_text
 from .rules import parse_conversation, parse_query
@@ -322,6 +323,16 @@ def _caveats(parsed) -> str:
     return (" " + " ".join(parts)) if parts else ""
 
 
+def _cancelled_note(session: Session, filters: SearchFilters, now: datetime, trace: TraceBuilder) -> str:
+    """Отменённые события, подходящие под запрос. Отмена — часть задачи: о ней говорят прямо, а не молча скрывают событие."""
+    found, _ = search(session, replace(filters, statuses=["cancelled"], limit=3, offset=0, exclude_ids=[]), now)
+    if not found:
+        return ""
+    trace.step("search_events", {**filters.describe(), "statuses": ["cancelled"]}, ids=[e.id for e in found], total=len(found))
+    trace.flag("cancelled_mentioned", [e.id for e in found])
+    return " Отменено: " + "; ".join(f"«{e.title}» ({when_text(e)})" for e in found) + "."
+
+
 def _subscription_reply(session: Session, message: str, trace: TraceBuilder, today, chat_id: int | None) -> AgentResult | None:
     """Просьбы о подписке. Данные не меняются: агент предлагает действие, выполнит его человек кнопкой."""
     if not _SUBSCRIPTION_WORDS.search(norm_text(message)):
@@ -383,12 +394,15 @@ def _rules_ask(session: Session, message: str, history: list[dict], now: datetim
     asked_city, asked_word = bool(filters.city), filters.q
     events, total = search(session, filters, now)
     trace.step("search_events", filters.describe(), ids=[e.id for e in events], total=total)
+    caveats += _cancelled_note(session, filters, now, trace)  # до ослабления условий: речь о том, что человек спросил
+    # Угаданное слово — самое слабое из условий: если результатов нет, отбрасываем его первым и говорим об этом
+    relaxations = sorted(RELAXATIONS, key=lambda r: r[0] != "q") if parsed.guessed_q else RELAXATIONS
     relaxed: list[tuple[str, str]] = []  # (ключ, название условия) в порядке ослабления
     blocking = False
 
     if not events:
         # Сначала ищем ОДНО условие, без которого что-то находится: именно оно мешает, и об этом можно сказать прямо.
-        for key, label, applies, relax in RELAXATIONS:
+        for key, label, applies, relax in relaxations:
             if not applies(filters):
                 continue
             trial = replace(filters)
@@ -400,7 +414,7 @@ def _rules_ask(session: Session, message: str, history: list[dict], now: datetim
                 break
     if not events:
         # Одного условия мало: ослабляем по очереди только те, что были заданы, и честно говорим обо всех.
-        for key, label, applies, relax in RELAXATIONS:
+        for key, label, applies, relax in relaxations:
             if events:
                 break
             if not applies(filters):
