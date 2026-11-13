@@ -42,7 +42,7 @@ def add_missing_columns(bind: Engine) -> list[str]:
 
 def backfill_defaults(bind: Engine) -> int:
     """Заполняет значения новых столбцов в уже существующих строках: публикация и ключ площадки. Возвращает число строк."""
-    from .normalize import norm_text
+    from .venues import venue_key_for
 
     # Обычный SQL, а не ORM: заполнение служебных столбцов не должно менять updated_at у всех событий.
     with bind.begin() as conn:
@@ -50,7 +50,7 @@ def backfill_defaults(bind: Engine) -> int:
         rows = conn.execute(text("SELECT id, venue FROM events WHERE venue_key IS NULL")).all()
         if rows:
             conn.execute(text("UPDATE events SET venue_key = :key WHERE id = :id"),
-                         [{"id": row.id, "key": norm_text(row.venue or "")} for row in rows])
+                         [{"id": row.id, "key": venue_key_for(row.venue)} for row in rows])
         changed += len(rows)
         changed += _backfill_derived(conn)
     return changed

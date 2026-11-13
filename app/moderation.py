@@ -7,6 +7,7 @@ from .dedup import make_dedup_key
 from .models import Event
 from .normalize import canonical_category, canonical_city, canonical_language, norm_text, parse_age
 from .schemas import EventPatch
+from .venues import venue_key_for
 
 
 class EditError(ValueError):
@@ -50,7 +51,7 @@ def edit_event(session: Session, event: Event, patch: EventPatch, actor: str) ->
         raise EditError("Цена «до» меньше цены «от»")
     event.dedup_key = make_dedup_key(event.city, event.start_at, event.title)
     event.search_text = _search_text(event)
-    event.venue_key = norm_text(event.venue)
+    event.venue_key = venue_key_for(event.venue)
     changes = audit.diff(before, audit.snapshot(event))
     if changes:
         audit.record(session, actor, "edit", event.id, changes)

@@ -4,6 +4,8 @@
   python -m app.maintenance series --apply    # исправить их (делайте копию базы перед этим)
   python -m app.maintenance demo-reset        # показать выдуманные демо-события (источники «demo-*»), если они попали в базу
   python -m app.maintenance demo-reset --apply  # удалить их; реальные события не трогаются
+  python -m app.maintenance venues            # сколько площадок получат другой ключ после правки data/venues.json
+  python -m app.maintenance venues --apply    # пересчитать ключи площадок у всех событий
   python -m app.maintenance reprocess [--source kassir.ru]          # сколько сырых записей будет переиграно
   python -m app.maintenance reprocess [--source kassir.ru] --apply  # переиграть нормализацию и слияние без нового сбора
 """
@@ -58,7 +60,7 @@ def reset_demo(session: Session) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Служебные операции с базой")
-    parser.add_argument("task", choices=["series", "demo-reset", "reprocess"])
+    parser.add_argument("task", choices=["series", "demo-reset", "reprocess", "venues"])
     parser.add_argument("--apply", action="store_true", help="записать изменения (без флага только показывает)")
     parser.add_argument("--source", help="reprocess: только записи этого источника")
     args = parser.parse_args(argv)
@@ -71,6 +73,18 @@ def main(argv: list[str] | None = None) -> int:
     from .formatting import is_demo
 
     init_db()
+    if args.task == "venues":
+        from .venues import venue_key_for
+
+        with SessionLocal() as session:
+            stale = [e for e in session.scalars(select(Event)) if e.venue_key != venue_key_for(e.venue)]
+            if args.apply:
+                for event in stale:
+                    event.venue_key = venue_key_for(event.venue)
+                session.commit()
+        verb = "пересчитан" if args.apply else "изменится (запустите с --apply)"
+        print(f"Ключ площадки {verb} у событий: {len(stale)}")
+        return 0
     if args.task == "reprocess":
         from sqlalchemy import func
 

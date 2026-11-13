@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && mkdir /data && chown 1000:1000 /data
 COPY app app
 COPY data/sample_events.json data/sample_events.json
+COPY data/venues.json data/venues.json
 COPY deploy/entrypoint.sh entrypoint.sh
 USER 1000
 EXPOSE 8000

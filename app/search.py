@@ -9,6 +9,7 @@ from .config import now_local
 from .formatting import ONGOING_GRACE
 from .models import Event
 from .normalize import ACTIVE_STATUSES, canonical_category, canonical_city, canonical_language, norm_text, stem, tokens
+from .venues import canonical_venue, filter_key
 
 WHEN_VALUES = ("today", "tomorrow", "weekend", "week")
 MAX_QUERY_WORDS = 8  # каждое слово — отдельный LIKE по всей таблице: длинный запрос не должен её перебирать сотни раз
@@ -86,7 +87,7 @@ def _conditions(f: SearchFilters, now: datetime) -> list:
     elif f.publication == "published" or not f.include_drafts:
         conds.append(or_(Event.publication.is_(None), Event.publication != "draft"))
     if f.venue:
-        key = norm_text(f.venue[:200])
+        key = filter_key(f.venue[:200])
         if key:
             conds.append(Event.venue_key.like(f"%{key}%"))
 
@@ -193,6 +194,9 @@ def venues(session: Session, now: datetime | None = None, *, city: str | None = 
     result = []
     for group in groups.values():
         names = sorted(group["names"], key=lambda n: (-group["names"][n], n))
+        official = next((n for n in names if canonical_venue(n) == n), None) or canonical_venue(names[0])
+        if official:  # площадка есть в справочнике: показываем каноническое название, написания источников идут в names
+            names = [official, *[n for n in names if n != official]]
         result.append({"name": names[0], "city": max(group["cities"], key=group["cities"].get), "count": group["count"],
                        "names": names[1:6]})
     result.sort(key=lambda v: (-v["count"], v["name"]))

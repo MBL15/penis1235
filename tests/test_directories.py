@@ -41,7 +41,9 @@ def test_spellings_of_one_venue_are_grouped(session, places):
 
 def test_venue_directory_can_be_narrowed_by_city_and_text(session, places):
     assert [v["name"] for v in venues(session, NOW, city="Стерлитамак")] == ["Русский драматический театр"]
-    assert [v["name"] for v in venues(session, NOW, q="ОПЕРЫ")] == ["Театр оперы и балета"]
+    found = venues(session, NOW, q="ОПЕРЫ")  # площадка есть в справочнике: показывается официальное название
+    assert [v["name"] for v in found] == ["Башкирский государственный академический театр оперы и балета"]
+    assert found[0]["names"] == ["Театр оперы и балета"]
     assert venues(session, NOW, q="несуществующая") == []
     assert len(venues(session, NOW, limit=1)) == 1
 

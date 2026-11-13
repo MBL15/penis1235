@@ -30,6 +30,7 @@ from .normalize import (
     parse_age,
 )
 from .schemas import EventIn
+from .venues import venue_key_for
 
 DEFAULT_CITY = "Уфа"
 
@@ -159,7 +160,7 @@ def upsert_detailed(session: Session, data: EventIn, *, actor: str = "system") -
             image_url=data.image_url,
             status=data.status,
             publication=data.publication,
-            venue_key=norm_text(data.venue),
+            venue_key=venue_key_for(data.venue),
             sources=[{"name": data.source, "url": data.source_url or data.url, "status": data.status}],
         )
         event.dedup_key = make_dedup_key(city, event.start_at, event.title)
@@ -178,7 +179,7 @@ def upsert_detailed(session: Session, data: EventIn, *, actor: str = "system") -
     if changed:
         existing.dedup_key = make_dedup_key(existing.city, existing.start_at, existing.title)
         existing.search_text = _search_text(existing)
-        existing.venue_key = norm_text(existing.venue)
+        existing.venue_key = venue_key_for(existing.venue)
         audit.record(session, actor, "update" if same_source else "merge", existing.id,
                      {**audit.diff(before, audit.snapshot(existing)), "source": data.source})
         session.commit()
@@ -219,7 +220,7 @@ def merge_events(session: Session, keep: Event, drop: Event, *, actor: str = "sy
         keep.start_at = drop.start_at
     keep.dedup_key = make_dedup_key(keep.city, keep.start_at, keep.title)
     keep.search_text = _search_text(keep)
-    keep.venue_key = norm_text(keep.venue)
+    keep.venue_key = venue_key_for(keep.venue)
     audit.record(session, actor, "merge", keep.id, {**audit.diff(before, audit.snapshot(keep)), "merged_from_event": drop.id})
     audit.record(session, actor, "delete", drop.id, {"title": drop.title, "merged_into": keep.id})
     session.delete(drop)
