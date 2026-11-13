@@ -45,6 +45,14 @@ class Event(Base):
     sources: Mapped[list] = mapped_column(JSON, default=list)
     dedup_key: Mapped[str] = mapped_column(String(64), default="", index=True)
     search_text: Mapped[str] = mapped_column(Text, default="")
+    # Поля ТЗ §8.1, добавленные миграцией 0003
+    normalized_title: Mapped[str | None] = mapped_column(String(300), nullable=True, index=True)  # название для поиска и дедупликации
+    tags: Mapped[list | None] = mapped_column(JSON, nullable=True)  # метки: джаз, дети, бесплатно, башкирский язык
+    source_type: Mapped[str | None] = mapped_column(String(12), nullable=True)  # manual | import | api | page | rss
+    source_hash: Mapped[str | None] = mapped_column(String(40), nullable=True)  # хеш записи первого источника: идемпотентность
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # когда карточку проверяли последний раз
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)  # уверенность 0–1 (app/verify.py)
+    review_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)  # почему карточка в очереди модерации
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_local, onupdate=now_local)
 

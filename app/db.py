@@ -56,6 +56,31 @@ def backfill_defaults(bind: Engine) -> int:
     return changed
 
 
+def _backfill_event_fields(conn, columns: set[str]) -> int:
+    """normalized_title, tags и source_type у событий, загруженных до появления этих столбцов (идемпотентно: только пустые)."""
+    import json
+
+    from .normalize import derive_tags, source_type_for, title_key
+
+    if not {"normalized_title", "tags", "source_type", "price_min", "kids_friendly", "language", "sources"} <= columns:
+        return 0
+    rows = conn.execute(text("SELECT id, title, description, price_min, kids_friendly, language, sources, normalized_title, tags, source_type "
+                             "FROM events WHERE normalized_title IS NULL OR tags IS NULL OR source_type IS NULL")).all()
+    updates = []
+    for row in rows:
+        sources = row.sources if isinstance(row.sources, list) else json.loads(row.sources or "[]")
+        updates.append({
+            "id": row.id,
+            "nt": row.normalized_title if row.normalized_title is not None else title_key(row.title),
+            "tags": json.dumps(derive_tags(row.title, row.description or "", kids=bool(row.kids_friendly), free=row.price_min == 0,
+                                           language=row.language), ensure_ascii=False) if row.tags is None else row.tags,
+            "st": row.source_type or source_type_for(sources[0].get("name") if sources else None),
+        })
+    if updates:
+        conn.execute(text("UPDATE events SET normalized_title = :nt, tags = :tags, source_type = :st WHERE id = :id"), updates)
+    return len(updates)
+
+
 def _backfill_derived(conn) -> int:
     """Длительность из окончания в тот же день и явно названный язык для строк, загруженных до появления этих столбцов."""
     from datetime import datetime
@@ -69,6 +94,7 @@ def _backfill_derived(conn) -> int:
     def moment(value):
         return value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
 
+    _backfill_event_fields(conn, columns)  # метки и тип источника: в счёт «заполнено значений» не входят
     changed = 0
     durations = []
     for row in conn.execute(text("SELECT id, start_at, end_at FROM events WHERE duration_min IS NULL AND end_at IS NOT NULL")):

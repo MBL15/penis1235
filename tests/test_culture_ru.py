@@ -79,7 +79,7 @@ def test_sync_creates_then_is_idempotent(session):
     second = sync_records(session, records())
     assert second["created"] == 0 and second["merged"] == 0 and second["unchanged"] == 5
     event = session.scalar(select(Event).where(Event.title.like("%Золотая Орда%")))
-    assert event.sources == [{"name": "culture.ru", "url": event.url, "status": "scheduled"}] and event.end_at.year == 2027
+    assert [{k: s[k] for k in ("name", "url", "status")} for s in event.sources] == [{"name": "culture.ru", "url": event.url, "status": "scheduled"}] and event.end_at.year == 2027
 
 
 def test_sync_skips_bad_records_but_keeps_going(session):

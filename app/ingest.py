@@ -13,7 +13,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from . import audit
-
+from .config import now_local
 from .dedup import find_duplicate, make_dedup_key, worse_status
 from .models import Event
 from .normalize import (
@@ -23,12 +23,15 @@ from .normalize import (
     canonical_city,
     canonical_language,
     derive_duration,
+    derive_tags,
     detect_language,
     find_city_in_text,
     is_kids_text,
     norm_text,
     merge_age,
     parse_age,
+    source_type_for,
+    title_key,
 )
 from .schemas import EventIn
 from .venues import venue_key_for
@@ -123,6 +126,29 @@ def upsert_event(session: Session, data: EventIn, *, actor: str = "system") -> t
     return event, outcome
 
 
+def _mark_seen(event: Event, source: str) -> None:
+    """Время, когда источник последний раз прислал это событие (нужно, чтобы находить пропавшие из источника)."""
+    stamp = now_local().isoformat(timespec="seconds")
+    event.sources = [{**s, "seen_at": stamp} if s.get("name") == source else s for s in event.sources or []]
+
+
+def _remember_hash(event: Event, source: str, digest: str) -> None:
+    stamp = now_local().isoformat(timespec="seconds")
+    # Несколько записей одного источника могут относиться к одному событию (сеансы): помним последние хеши, а не один
+    event.sources = [{**s, "hashes": ([h for h in s.get("hashes", []) if h != digest] + [digest])[-20:], "seen_at": stamp}
+                     if s.get("name") == source else s for s in event.sources or []]
+
+
+def record_hash(data: EventIn) -> str:
+    """Хеш записи источника: одинаковая запись того же источника ничего не меняет, даже если другой источник успел
+    переписать общие поля (идемпотентность по содержимому, а не только по числу строк)."""
+    import hashlib
+    import json
+
+    payload = data.model_dump(mode="json", exclude={"publication"})
+    return hashlib.sha1(json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+
+
 def upsert_detailed(session: Session, data: EventIn, *, actor: str = "system") -> tuple[Event, str, bool]:
     """Как upsert_event, плюс признак «другой источник подтвердил уже известное событие»: так видно, сколько дублей между
     источниками нашла дедупликация (а не просто обновила свою же запись). Каждое создание и изменение пишется в журнал."""
@@ -162,8 +188,13 @@ def upsert_detailed(session: Session, data: EventIn, *, actor: str = "system") -
             status=data.status,
             publication=data.publication,
             venue_key=venue_key_for(data.venue),
-            sources=[{"name": data.source, "url": data.source_url or data.url, "status": data.status}],
+            sources=[{"name": data.source, "url": data.source_url or data.url, "status": data.status,
+                      "hashes": [record_hash(data)], "seen_at": now_local().isoformat(timespec="seconds")}],
+            source_type=source_type_for(data.source),
+            source_hash=record_hash(data),
         )
+        event.normalized_title = title_key(event.title)
+        event.tags = derive_tags(event.title, event.description or "", kids=bool(kids), free=event.price_min == 0, language=language)
         event.dedup_key = make_dedup_key(city, event.start_at, event.title)
         event.search_text = _search_text(event)
         session.add(event)
@@ -175,8 +206,15 @@ def upsert_detailed(session: Session, data: EventIn, *, actor: str = "system") -
         return event, "created", False
 
     same_source = any(s.get("name") == data.source for s in existing.sources or [])
+    digest = record_hash(data)
+    if same_source and any(s.get("name") == data.source and digest in s.get("hashes", []) for s in existing.sources or []):
+        _mark_seen(existing, data.source)  # та же запись того же источника: ничего не меняем, только «видели сейчас»
+        session.commit()
+        return existing, "unchanged", False
     before = audit.snapshot(existing)
     changed = _merge(existing, data, category=category, age=age, kids=kids, same_source=same_source, language=language)
+    _remember_hash(existing, data.source, digest)
+    existing.source_hash = existing.source_hash or digest
     if changed:
         existing.dedup_key = make_dedup_key(existing.city, existing.start_at, existing.title)
         existing.search_text = _search_text(existing)

@@ -64,11 +64,11 @@ def _version(engine):
 
 def test_new_database_is_created_from_models_and_marked_with_the_latest_version(file_engine):
     db.init_db()
-    assert _version(file_engine) == "0002"
+    assert _version(file_engine) == "0003"
     columns = {c["name"]: c for c in inspect(file_engine).get_columns("events")}
     assert columns["age_limit"]["nullable"] is True
     db.init_db()  # повторный запуск ничего не ломает
-    assert _version(file_engine) == "0002"
+    assert _version(file_engine) == "0003"
 
 
 def test_database_from_before_migrations_is_upgraded_and_keeps_its_data(file_engine):
@@ -93,6 +93,6 @@ def test_database_from_before_migrations_is_upgraded_and_keeps_its_data(file_eng
     assert legacy["age_limit"]["nullable"] is False
 
     db.init_db()
-    assert _version(file_engine) == "0002"
+    assert _version(file_engine) == "0003"
     with file_engine.connect() as conn:
         assert conn.execute(text("SELECT title, age_limit FROM events")).all() == [("Старое событие", None)]  # ноль стал «не указан»

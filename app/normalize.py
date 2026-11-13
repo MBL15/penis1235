@@ -186,6 +186,44 @@ def merge_age(a: int | None, b: int | None) -> int | None:
     return max(a, b)
 
 
+_TAG_STEMS = (
+    ("джаз", ("джаз",)), ("классическая музыка", ("симфон", "камерн", "органн", "классическ", "филармон")),
+    ("опера", ("опер",)), ("балет", ("балет",)), ("стендап", ("стендап", "stand-up", "standup")), ("рок", ("рок-", "рок ", "панк", "метал")),
+    ("фольклор", ("фолк", "народн", "курай")), ("мастер-класс", ("мастер-класс", "мастер класс")), ("квест", ("квест",)),
+)
+
+
+def derive_tags(title: str, description: str, *, kids: bool, free: bool, language: str | None) -> list[str]:
+    """Метки события из названия и описания: только то, что названо явно («джаз» нет в тексте: метки нет)."""
+    text = f"{title} {description or ''}".lower().replace("ё", "е")
+    tags = [tag for tag, stems in _TAG_STEMS if any(stem in text for stem in stems)]
+    if kids:
+        tags.append("дети")
+    if free:
+        tags.append("бесплатно")
+    if language == "ba":
+        tags.append("башкирский язык")
+    return tags
+
+
+_SOURCE_TYPES = {"culture.ru": "api", "kudago.com": "api", "afisha.yandex.ru": "page", "kassir.ru": "page",
+                 "admin": "manual", "manual": "manual"}
+
+
+def source_type_for(source: str | None) -> str:
+    """Тип первого источника: ручной ввод, импорт файла, API, страница или RSS (ТЗ §8.1)."""
+    name = (source or "").strip().lower()
+    if name in _SOURCE_TYPES:
+        return _SOURCE_TYPES[name]
+    if name.startswith(("admin", "manual", "moderator")):
+        return "manual"
+    if "rss" in name or name.endswith((".xml", ".atom")):
+        return "rss"
+    if "." in name:  # похоже на домен: сайт учреждения
+        return "page"
+    return "import"
+
+
 KIDS_STEMS = ("детск", "детям", "детей", "дети", "детьм", "детиш", "ребен", "малыш", "кукол", "семейн")
 
 
