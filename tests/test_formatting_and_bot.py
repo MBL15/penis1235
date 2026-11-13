@@ -61,7 +61,8 @@ def test_quick_filters_and_menu():
     else:
         raise AssertionError("ожидали ValueError")
     buttons = [b for row in bot.menu_markup("Уфа").inline_keyboard for b in row]
-    assert len(buttons) == len(bot.QUICK) + 2
+    assert len(buttons) == len(bot.QUICK) + 3  # быстрые фильтры, город, категории и «Подписки»
+    assert "fs:list" in [b.callback_data for b in buttons]
 
 
 def test_menu_gets_open_app_button_only_when_webapp_url_is_set(monkeypatch):
