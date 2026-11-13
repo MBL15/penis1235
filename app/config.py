@@ -82,7 +82,8 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 # Второй провайдер, бесплатный тариф Groq (API в формате OpenAI). Ключ: https://console.groq.com/keys. Без ключа не используется.
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+# Список моделей ключа: GET {GROQ_BASE_URL}/models. gpt-oss-120b иногда отдаёт итог как вызов инструмента «json» (ошибка 400), 20b стабильнее.
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 # Порядок провайдеров: если первый не ответил (квота, перегрузка, сеть), берётся следующий; потом режим правил.
 LLM_PROVIDERS = [p.strip() for p in os.getenv("LLM_PROVIDERS", "gemini,groq").split(",") if p.strip()]
 # Запасные модели через запятую: если основная вернула 429 (квота у каждой модели своя), 503 или 404, берётся следующая.

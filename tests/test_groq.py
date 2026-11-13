@@ -146,3 +146,34 @@ def test_http_client_sends_openai_request_and_maps_errors(monkeypatch):
     with pytest.raises(LlmHttpError) as err:
         client.chat(model="m", messages=[])
     assert err.value.code == 429 and "rate" in str(err.value)
+
+
+def test_short_rate_limit_is_waited_out_and_long_one_is_not(monkeypatch):
+    from app.llm_openai import retry_after
+
+    assert retry_after(None, "Please try again in 6.4275s. Need more") == pytest.approx(6.4275)
+    assert retry_after(None, "Please try again in 19h43m8.3s") is None or retry_after(None, "try again in 1m5s") == 65
+    assert retry_after({"retry-after": "3"}, "") == 3 and retry_after(None, "нет подсказки") is None
+
+    sleeps, calls = [], []
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+
+    def flaky(request, timeout):
+        calls.append(1)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(request.full_url, 429, "x", {}, BytesIO(b'{"error":{"message":"Please try again in 2s."}}'))
+
+        class Ok(BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        return Ok(b'{"choices": []}')
+
+    monkeypatch.setattr("urllib.request.urlopen", flaky)
+    assert OpenAICompatClient("k", "https://x/v1").chat(model="m", messages=[]) == {"choices": []}
+    assert len(calls) == 2 and sleeps == [2.5]
+
+    calls.clear()
+    monkeypatch.setattr("urllib.request.urlopen", lambda r, timeout: (_ for _ in ()).throw(
+        urllib.error.HTTPError(r.full_url, 429, "x", {}, BytesIO(b'{"error":{"message":"Please try again in 40s."}}'))))
+    with pytest.raises(LlmHttpError):  # 40 с ждать нельзя: ответ правилами лучше минуты молчания
+        OpenAICompatClient("k", "https://x/v1").chat(model="m", messages=[])
