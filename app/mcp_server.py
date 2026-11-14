@@ -15,13 +15,12 @@ import json
 import logging
 import sys
 import time
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Callable, TextIO
 
 from . import config
-from .agent_tools import GET_EVENT_TOOL, SEARCH_TOOL, SIMILAR_TOOL, VENUE_TOOL, ToolContext, _dispatch, int_or_none
-from .normalize import CATEGORIES, canonical_city
-from .planner import MAX_EVENTS, MIN_EVENTS, PlanRequest, plan_weekend
+from .agent_tools import GET_EVENT_TOOL, PLAN_TOOL, SEARCH_TOOL, SIMILAR_TOOL, VENUE_TOOL, ToolContext, _dispatch
+from .normalize import CATEGORIES
 from .tracing import TraceBuilder
 
 log = logging.getLogger("afisha.mcp")
@@ -40,32 +39,8 @@ FACETS_TOOL = {
     "description": "Справочники афиши: города и категории с числом актуальных событий. Вызывай, чтобы узнать допустимые значения фильтров.",
     "input_schema": {"type": "object", "properties": {}},
 }
-_HHMM = {"type": "string", "description": "Время ЧЧ:ММ"}
-PLAN_TOOL = {
-    "name": "plan_day",
-    "description": (
-        "Планировщик «Выходной день»: 2–4 события одного дня без пересечений, по времени, с оценкой переездов и общей "
-        "стоимостью. Если ограничения несовместимы, возвращает feasible=false, причину и что можно изменить."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "day": {"type": "string", "description": "День, ГГГГ-ММ-ДД"},
-            "window_from": {**_HHMM, "description": "Свободен с, ЧЧ:ММ (по умолчанию 10:00)"},
-            "window_to": {**_HHMM, "description": "Свободен до, ЧЧ:ММ (по умолчанию 22:00)"},
-            "budget": {"type": "integer", "description": "Бюджет в рублях на всех"},
-            "adults": {"type": "integer", "description": "Сколько взрослых (по умолчанию 1)"},
-            "children": {"type": "array", "items": {"type": "integer"}, "description": "Возраст каждого ребёнка"},
-            "city": {"type": "string", "description": "Город, например «Уфа»"},
-            "max_travel_min": {"type": "integer", "description": "Максимум минут на один переезд (по умолчанию 40)"},
-            "events": {"type": "integer", "description": f"Сколько событий, {MIN_EVENTS}–{MAX_EVENTS} (по умолчанию 3)"},
-            "category": {"type": "string", "enum": list(CATEGORIES), "description": "Только эта категория"},
-        },
-        "required": ["day"],
-    },
-}
-AGENT_TOOLS = (SEARCH_TOOL, GET_EVENT_TOOL, SIMILAR_TOOL, VENUE_TOOL)
-TOOLS = (*AGENT_TOOLS, FACETS_TOOL, PLAN_TOOL)
+AGENT_TOOLS = (SEARCH_TOOL, GET_EVENT_TOOL, SIMILAR_TOOL, VENUE_TOOL, PLAN_TOOL)  # те же, что у агента
+TOOLS = (*AGENT_TOOLS, FACETS_TOOL)
 
 
 class RpcError(Exception):
@@ -86,55 +61,11 @@ def _with_links(result: dict) -> dict:
     """Ссылка на карточку сервиса у каждого события: клиент может показать её пользователю как источник факта."""
     for item in result.get("events", []):
         item["url"] = _event_url(item["id"])
+    for item in result.get("items", []):  # план дня
+        item["url"] = _event_url(item["id"])
     if "id" in result and "title" in result:
         result["url"] = _event_url(result["id"])
     return result
-
-
-def _clock(value, default):
-    text = str(value or "").strip()
-    if not text:
-        return default
-    hour, _, minute = text.partition(":")
-    return datetime.strptime(f"{int(hour):02d}:{int(minute or 0):02d}", "%H:%M").time()
-
-
-def _plan(session, args: dict, now: datetime) -> dict:
-    defaults = PlanRequest(day=now.date())
-    children = [a for a in (int_or_none(v) for v in (args.get("children") or [])[:10]) if a is not None and 0 <= a <= 18]
-    city_raw = str(args.get("city") or "").strip()[:64]
-    category = str(args.get("category") or "")
-    budget = int_or_none(args.get("budget"))
-    req = PlanRequest(
-        day=date.fromisoformat(str(args["day"])),
-        window_from=_clock(args.get("window_from"), defaults.window_from),
-        window_to=_clock(args.get("window_to"), defaults.window_to),
-        budget=budget if budget is None or budget >= 0 else None,
-        adults=max(0, min(int_or_none(args.get("adults")) or 1, 10)),
-        children=children,
-        city=(canonical_city(city_raw) or city_raw) if city_raw else None,
-        max_travel_min=int_or_none(args.get("max_travel_min")) or defaults.max_travel_min,
-        events=max(MIN_EVENTS, min(int_or_none(args.get("events")) or defaults.events, MAX_EVENTS)),
-        category=category if category in CATEGORIES else None,
-    )
-    if req.people == 0:
-        raise ValueError("Нужен хотя бы один участник")
-    result = plan_weekend(session, req, now)
-    return {
-        "request": req.describe(),
-        "feasible": result.feasible,
-        "message": result.message,
-        "suggestions": result.suggestions,
-        "total_cost": result.total_cost,
-        "total_travel_min": result.total_travel_min,
-        "items": [
-            {"id": i.event.id, "title": i.event.title, "venue": i.event.venue, "city": i.event.city,
-             "start": i.start.strftime("%Y-%m-%d %H:%M"), "end": i.end.strftime("%Y-%m-%d %H:%M"),
-             "end_estimated": i.end_estimated, "travel_min": i.travel_min, "cost": i.cost, "price_known": i.price_known,
-             "url": _event_url(i.event.id)}
-            for i in result.items
-        ],
-    }
 
 
 def call_tool(name: str, args: dict, *, session_factory: Callable | None = None, now: datetime | None = None) -> dict:
@@ -156,8 +87,6 @@ def call_tool(name: str, args: dict, *, session_factory: Callable | None = None,
                 raw = facets(session, now)
                 data = {"cities": raw["cities"],
                         "categories": [{**c, "name": CATEGORIES.get(c["slug"], c["slug"])} for c in raw["categories"]]}
-            elif name == "plan_day":
-                data = _plan(session, args, now)
             else:
                 raise RpcError(-32602, f"Неизвестный инструмент: {name}")
     except RpcError:

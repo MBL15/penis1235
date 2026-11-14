@@ -269,3 +269,25 @@ def test_source_fetch_refuses_foreign_redirects_and_huge_pages(monkeypatch):
         culture_ru.http_get(target, retries=1)
     monkeypatch.setattr(culture_ru.urllib.request, "build_opener", _opener(_Response(target, "страница".encode())))
     assert culture_ru.http_get(target, retries=1) == "страница"
+
+
+def test_forwarded_for_is_trusted_only_from_internal_peers(monkeypatch):
+    """Б-2: порт сервиса открыт наружу, TRUST_PROXY=1 — подставной X-Forwarded-For с публичного адреса не меняет ключ лимита."""
+    from types import SimpleNamespace
+
+    from app.security import RateLimiter, internal_peer
+
+    monkeypatch.setattr(config, "TRUST_PROXY", True)
+    monkeypatch.setattr(config, "TRUSTED_PROXIES", [])
+
+    def request(peer):
+        return SimpleNamespace(client=SimpleNamespace(host=peer), headers={"x-forwarded-for": "1.1.1.1, 5.5.5.5"})
+
+    assert RateLimiter.client_ip(request("172.18.0.1")) == "5.5.5.5"  # nginx в сети Docker
+    assert RateLimiter.client_ip(request("8.8.4.4")) == "8.8.4.4"  # напрямую из интернета: заголовок не принят
+    assert internal_peer("10.0.0.5") and internal_peer("::1") and not internal_peer("8.8.8.8")
+    import ipaddress
+
+    monkeypatch.setattr(config, "TRUSTED_PROXIES", [ipaddress.ip_network("172.17.0.1/32")])
+    assert RateLimiter.client_ip(request("172.18.0.1")) == "172.18.0.1"  # не из списка
+    assert RateLimiter.client_ip(request("172.17.0.1")) == "5.5.5.5"

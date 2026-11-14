@@ -223,3 +223,15 @@ def test_checks_catch_what_they_are_for(eval_session):
     assert checks.violations(cheap, {"free": True}) == [] and checks.violations(cheap, {"price_max": -1})
     assert checks.says_no_data("По запросу ничего не нашлось") and not checks.says_no_data("Нашёл 5 событий")
     assert checks.says_relaxed("Ослабил условие по цене") and checks.mentions_cancellation("Отменено: «Х»")
+
+
+def test_basic_quality_report_covers_section_9_1():
+    """ТЗ §9.1: заполненность, дубли, полнота, пустая выдача, скорость без модели, импорт 100 событий — одним прогоном."""
+    from eval import basic
+
+    report = basic.run()
+    names = [m["name"] for m in report["metrics"]]
+    assert names == ["Заполненность карточек", "Дубли в выдаче", "Полнота поиска", "Пустая выдача", "Скорость поиска (p95)",
+                     "Импорт 100 событий"]
+    assert all(m["ok"] for m in report["metrics"]), [m for m in report["metrics"] if not m["ok"]]
+    assert "Порогов не выполнено: **0**" in basic.render(report)

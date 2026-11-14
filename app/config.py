@@ -1,4 +1,5 @@
 """Настройки из переменных окружения (и файла .env)."""
+import ipaddress
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -41,6 +42,9 @@ REQUIRED_CHANNEL_TITLE = os.getenv("REQUIRED_CHANNEL_TITLE", "SpaceZ").strip()
 
 # Сервис стоит за прокси/платформой (Render, Railway, nginx): лимит запросов считаем по X-Forwarded-For, а не по адресу прокси.
 TRUST_PROXY = os.getenv("TRUST_PROXY", "") == "1"
+# Адреса прокси, которым можно верить в X-Forwarded-For (через запятую, IP или подсети). Пусто — любой внутренний адрес
+# (localhost, частные сети, в том числе сеть Docker). Запрос с публичного адреса заголовок не подменит в любом случае.
+TRUSTED_PROXIES = [ipaddress.ip_network(v.strip(), strict=False) for v in os.getenv("TRUSTED_PROXIES", "").split(",") if v.strip()]
 
 
 def _int_env(name: str, default: int) -> int:

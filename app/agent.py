@@ -112,6 +112,12 @@ def ask(
     if is_offtopic(message):
         trace.flag("offtopic", True)
         return _finish(session, trace, AgentResult(reply=OFFTOPIC_REPLY, mode="rules"))
+    # Историю присылает клиент, и подделать можно любую реплику, в том числе «ассистента». Реплики с инструкциями до
+    # модели не доходят: иначе текущее сообщение проверялось бы, а та же просьба в «прошлой реплике» прошла бы мимо фильтра.
+    clean = [t for t in history if not detect_injection(str(t.get("content") or "")[:MAX_TURN_CHARS])]
+    if len(clean) != len(history):
+        trace.flag("injection_in_history", len(history) - len(clean))
+        history = clean
 
     providers = _providers(client, openai_client) if config.AGENT_MODE != "rules" else []
     if user_key is None and chat_id is not None:
@@ -488,6 +494,7 @@ CLARIFY = (
     "Подскажите, когда и что вас интересует. Например: «в субботу с ребёнком до 1000 рублей», "
     "«бесплатные выставки в Уфе» или «концерты на выходных»."
 )
+_PLAN_WORDS = re.compile(r"\b(?:сделай|составь|построй|подбери)\b.{0,30}\bплан|\bплан\s+(?:на|дня|выходн)|\bраспланир\w*")
 _SUBSCRIPTION_WORDS = re.compile(r"\b(?:под|от)пи[сш]\w*")
 _STATUS_ASK = re.compile(r"\bотмен\w*|\bперенес\w*|\bперенос\w*")
 _UNSUBSCRIBE_WORDS =re.compile(r"\bотпи[сш]\w*|\bотмени\w*\s+подписк")
@@ -543,6 +550,20 @@ def _cancelled_note(session: Session, filters: SearchFilters, now: datetime, tra
     return " Отменено: " + "; ".join(f"«{e.title}» ({when_text(e)})" for e in found) + "."
 
 
+def _plan_reply(session: Session, message: str, now: datetime, trace: TraceBuilder) -> AgentResult | None:
+    """«Сделай план на воскресенье: три события, 2000 на двоих» (ТЗ Прил. А): тот же планировщик, что у /plan и plan_day."""
+    if not _PLAN_WORDS.search(norm_text(message)):
+        return None
+    from .planner import plan_weekend, render_plan_text, request_from_text
+
+    request = request_from_text(message, now.date(), now=now)
+    plan = plan_weekend(session, request, now)
+    events = [i.event for i in plan.items]
+    trace.plan = {"planner": request.describe()}
+    trace.step("plan_day", {"request": "; ".join(request.describe())}, ids=[e.id for e in events], total=len(events))
+    return AgentResult(reply=render_plan_text(plan), events=events, mode="rules", filters={"plan": request.describe()})
+
+
 def _subscription_reply(session: Session, message: str, trace: TraceBuilder, today, chat_id: int | None) -> AgentResult | None:
     """Просьбы о подписке. Данные не меняются: агент предлагает действие, выполнит его человек кнопкой."""
     if not _SUBSCRIPTION_WORDS.search(norm_text(message)):
@@ -581,6 +602,9 @@ def _rules_ask(session: Session, message: str, history: list[dict], now: datetim
     subscription = _subscription_reply(session, message, trace, today, chat_id)
     if subscription is not None:
         return subscription
+    plan = _plan_reply(session, message, now, trace)
+    if plan is not None:
+        return plan
     parsed = parse_conversation(user_messages, today, context_ids)
     caveats = _caveats(parsed)
     trace.plan = {"conditions": parsed.notes, "corrections": parsed.corrections, "unsupported": parsed.unsupported,

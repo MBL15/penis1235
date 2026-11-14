@@ -119,7 +119,7 @@ def test_tool_loop_with_float_numbers_and_hallucinated_id(session, seeded):
     assert "Описывай только факты" in settings.system_instruction and "1–2 предложения" in settings.system_instruction
     assert settings.max_output_tokens >= 4096
     assert {d.name for d in settings.tools[0].function_declarations} == {
-        "search_events", "get_event", "find_similar", "get_venue_schedule", "subscribe", "save_feedback"}
+        "search_events", "get_event", "find_similar", "get_venue_schedule", "plan_day", "subscribe", "save_feedback"}
     answer = second["contents"][-1]
     assert answer.role == "user"
     payload = answer.parts[0].function_response.response["result"]

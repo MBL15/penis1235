@@ -53,6 +53,7 @@ QUICK = {
 
 # Состояние чатов хранится в памяти процесса: для демо этого достаточно.
 chat_city: dict[int, str] = {}
+LLM_SOURCE_NOTE = "Ответ собран ИИ-агентом по карточкам афиши, а не по его собственным знаниям."
 chat_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=10))
 chat_events: dict[int, list[int]] = {}  # события из последнего подбора агента: на них опираются «ещё», «похожее», «в другой день»
 # Свободный текст уходит в платную модель: не больше 8 вопросов в минуту с одного пользователя и не больше одного
@@ -380,6 +381,8 @@ def agent_view(chat_id: int, text: str) -> View:
         # Развёрнутый ответ модели уже описывает каждое событие; короткий ответ правил дополняем списком карточек.
         if result.events and result.mode != "llm":
             body += "\n\n" + render_list(result.events, html=True)
+        if result.mode == "llm":  # ТЗ §6.4: видно, что ответ построен по данным сервиса, а не «мнением модели»
+            body += "\n\n<i>" + html.escape(LLM_SOURCE_NOTE) + "</i>"
         kb = InlineKeyboardBuilder()
         for number, event in enumerate(result.events, 1):
             kb.button(text=f"{number}. {event.title[:28]}", callback_data=f"e:{event.id}")

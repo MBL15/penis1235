@@ -39,6 +39,20 @@ def client_key(host: str) -> str:
     return str(ip)
 
 
+def internal_peer(host: str | None) -> bool:
+    """Соединение пришло изнутри: localhost, частная сеть (Docker, локальный nginx), список TRUSTED_PROXIES или не по IP
+    (unix-сокет, тестовый клиент). Снаружи, из интернета, такого адреса не бывает, поэтому подставить его нельзя."""
+    try:
+        ip = ipaddress.ip_address((host or "").strip())
+    except ValueError:
+        return True  # unix-сокет прокси или тестовый клиент: не сетевой адрес
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    if config.TRUSTED_PROXIES:
+        return ip.is_loopback or any(ip in net for net in config.TRUSTED_PROXIES)
+    return ip.is_loopback or ip.is_private
+
+
 class RateLimiter:
     """Лимит запросов на адрес за окно времени (в памяти процесса). Потокобезопасен: зависимости FastAPI
     выполняются в пуле потоков."""
@@ -51,10 +65,13 @@ class RateLimiter:
     @staticmethod
     def client_ip(request: Request) -> str:
         """Адрес посетителя. За локальным туннелем или доверенным прокси request.client — это сам прокси: берём
-        последний (добавленный им) адрес из X-Forwarded-For, левые записи подделываются клиентом."""
+        последний (добавленный им) адрес из X-Forwarded-For, левые записи подделываются клиентом.
+
+        С TRUST_PROXY=1 заголовок принимается только от внутреннего адреса (internal_peer): если порт сервиса открыт наружу,
+        запрос напрямую с подставленным X-Forwarded-For иначе обходил бы все лимиты."""
         host = request.client.host if request.client else "unknown"
         forwarded = request.headers.get("x-forwarded-for", "")
-        if forwarded and (config.TRUST_PROXY or host in ("127.0.0.1", "::1")):
+        if forwarded and ((config.TRUST_PROXY and internal_peer(host)) or host in ("127.0.0.1", "::1")):
             host = forwarded.split(",")[-1].strip() or host
         return client_key(host)
 

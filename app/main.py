@@ -1,5 +1,6 @@
 """Сборка приложения: страницы, виджет, подключение API (/api/v1 и старые пути /api/*), защита, логи и метрики."""
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -21,7 +22,7 @@ from .deps import SessionDep
 from .models import Event
 from .observability import metrics, observe, setup_logging
 from .search import SearchFilters, _conditions, get_event
-from .security import ask_limiter, auth_limiter, guard  # noqa: F401  (ask_limiter и auth_limiter используют тесты)
+from .security import ask_limiter, auth_limiter, guard, internal_peer  # noqa: F401  (ask_limiter и auth_limiter используют тесты)
 
 log = logging.getLogger("afisha.api")
 
@@ -108,9 +109,15 @@ def liveness() -> dict:
 
 @app.get("/metrics", include_in_schema=False)
 def metrics_endpoint(request: Request, session: SessionDep) -> PlainTextResponse:
-    """Метрики Prometheus: запросы, ошибки, задержки. Закройте на прокси от внешнего мира или задайте METRICS_TOKEN."""
-    if config.METRICS_TOKEN and request.headers.get("authorization", "") != f"Bearer {config.METRICS_TOKEN}":
-        return errors.error_response(401, "Нужен заголовок Authorization: Bearer <токен метрик>")
+    """Метрики Prometheus: запросы, ошибки, задержки. С METRICS_TOKEN — только с заголовком Authorization: Bearer <токен>;
+    без токена — только изнутри (localhost, частная сеть): снаружи число запросов, ошибок и пути видеть незачем."""
+    if config.METRICS_TOKEN:
+        given = request.headers.get("authorization", "").encode("utf-8")
+        if not secrets.compare_digest(given, f"Bearer {config.METRICS_TOKEN}".encode("utf-8")):
+            return errors.error_response(401, "Нужен заголовок Authorization: Bearer <токен метрик>")
+    elif request.headers.get("x-forwarded-for") or not internal_peer(request.client.host if request.client else None):
+        # через прокси пришёл внешний посетитель (или адрес публичный): без токена метрики не отдаём
+        return errors.error_response(403, "Метрики доступны изнутри сети или с токеном METRICS_TOKEN")
     total = session.scalar(select(func.count()).select_from(Event).where(*_conditions(SearchFilters(), config.now_local()))) or 0
     return PlainTextResponse(metrics.render({"afisha_events_current": total}), media_type="text/plain; version=0.0.4")
 
