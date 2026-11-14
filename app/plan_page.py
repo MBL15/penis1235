@@ -11,7 +11,7 @@ from .planner import PlanRequest, default_day, plan_weekend
 from .search import facets
 
 FIELD = ("min-h-[46px] w-full rounded-field border border-line bg-glass-field px-3 text-[1rem] font-medium text-ink tx-field "
-         "hover:bg-white/90 focus-visible:border-brand focus-visible:shadow-focus focus-visible:outline-none placeholder:text-ink-4 placeholder:opacity-100")
+         "hover:bg-surface/90 focus-visible:border-brand focus-visible:shadow-focus focus-visible:outline-none placeholder:text-ink-4 placeholder:opacity-100")
 LABEL = "grid gap-[6px] text-[.82rem] font-bold tracking-[.02em] text-ink-3"
 # Плитка бенто: то же матовое стекло, что на главной. TILE: просто плитка, TILE_LIFT: плитка-ссылка с подъёмом при наведении.
 TILE = "relative rounded-card border border-stroke bg-glass p-[18px] shadow-surface w1000:p-4"
@@ -112,8 +112,8 @@ def _count_radios(current: str) -> str:
         items.append(
             f'<label class="cursor-pointer"><input class="peer sr-only" type="radio" name="events" value="{n}"{checked}>'
             f'<span class="grid min-h-[56px] place-items-center rounded-field border border-line bg-glass-field text-[1.4rem] font-extrabold tx-chip '
-            f'hover:bg-white peer-checked:border-transparent peer-checked:bg-brand peer-checked:text-white peer-checked:shadow-cta '
-            f'peer-focus-visible:outline peer-focus-visible:outline-[3px] peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[rgba(79,70,229,.55)]">{n}</span></label>')
+            f'hover:bg-surface peer-checked:border-transparent peer-checked:bg-brand peer-checked:text-white peer-checked:shadow-cta '
+            f'peer-focus-visible:outline peer-focus-visible:outline-[3px] peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[rgb(var(--focus)/var(--focus-a))]">{n}</span></label>')
     return f'<div class="grid grid-cols-3 gap-2">{"".join(items)}</div>'
 
 
@@ -132,7 +132,7 @@ def render(values: dict, cities: list[str], result=None, error: str = "") -> str
         f'<span class="text-[.88rem] text-ink-3">{esc(sub)}</span></div></div>' for i, t, title, sub in HINTS)
     intro = f"""    <section class="grid grid-cols-3 gap-4 w600:grid-cols-1" aria-labelledby="plan-title">
       <div class="{TILE} col-span-3 w600:col-span-1 bg-glass-hi">
-        <h1 id="plan-title" class="mb-2 text-[length:clamp(1.8rem,4vw,2.6rem)] font-extrabold leading-[1.06] tracking-[-.03em]">Выходной день <span class="text-brand">по плану</span></h1>
+        <h1 id="plan-title" class="mb-2 text-[length:clamp(1.8rem,4vw,2.6rem)] font-extrabold leading-[1.06] tracking-[-.03em]">Выходной день <span class="text-accent">по плану</span></h1>
         <p class="m-0 max-w-[58ch] text-[1.05rem] text-ink-3">Укажите день, бюджет и состав: соберём 2–4 события из афиши, чтобы успеть на все.</p>
       </div>
       {hints}
@@ -178,7 +178,7 @@ def render(values: dict, cities: list[str], result=None, error: str = "") -> str
     </form>"""
     body = [intro, form]
     if error:
-        body.append(f'    <p class="mt-4 rounded-card border border-[rgba(200,30,30,.35)] bg-bad-bg p-4 font-semibold text-bad" role="alert">{esc(error)}</p>')
+        body.append(f'    <p class="mt-4 rounded-card border border-bad/35 bg-bad-bg p-4 font-semibold text-bad" role="alert">{esc(error)}</p>')
     if result is not None:
         body.append(_result_html(result))
     return _layout("Выходной день: план из афиши", "План дня из 2–4 событий афиши без пересечений, с оценкой дороги и стоимости",
@@ -188,7 +188,7 @@ def render(values: dict, cities: list[str], result=None, error: str = "") -> str
 def _result_html(result) -> str:
     ok = result.feasible
     tone = "tone-kids" if ok else "tone-festival"
-    border = "border-[rgba(22,128,76,.4)]" if ok else "border-[rgba(200,120,0,.5)]"
+    border = "border-ok/40" if ok else "border-warn/50"
     parts = ['    <section class="mt-6" aria-live="polite" aria-label="Ваш план">',
              f'      <div class="{TILE} {border} flex items-start gap-3 bg-glass-hi">{_icon("check" if ok else "sun", tone)}<div class="grid gap-1">'
              f'<strong class="text-[1.1rem] font-extrabold">{esc(result.message)}</strong>']
@@ -208,12 +208,12 @@ def _result_html(result) -> str:
             end = f"{item.end:%H:%M}" + (" (оценка)" if item.end_estimated else "")
             place = ", ".join(p for p in (event.venue, event.city) if p)
             parts.append(
-                f'        <li class="{TILE_LIFT}{span} grid content-start gap-2 has-[a:focus-visible]:outline has-[a:focus-visible]:outline-[3px] has-[a:focus-visible]:outline-offset-[3px] has-[a:focus-visible]:outline-[rgba(79,70,229,.55)]">'
+                f'        <li class="{TILE_LIFT}{span} grid content-start gap-2 has-[a:focus-visible]:outline has-[a:focus-visible]:outline-[3px] has-[a:focus-visible]:outline-offset-[3px] has-[a:focus-visible]:outline-[rgb(var(--focus)/var(--focus-a))]">'
                 f'<div class="flex flex-wrap items-center gap-2"><span class="grid h-9 min-w-9 place-items-center rounded-full bg-brand px-3 text-[.9rem] font-extrabold text-white">{index + 1}</span>'
                 f'<span class="text-[1.3rem] font-extrabold tracking-[-.02em] [font-variant-numeric:tabular-nums]">{item.start:%H:%M}–{esc(end)}</span>{travel}</div>'
                 f'<a class="text-[1.15rem] font-bold leading-[1.3] text-ink no-underline after:absolute after:inset-0 after:rounded-[inherit] after:content-[\'\'] focus-visible:outline-none" href="/event/{int(event.id)}">{esc(event.title)}</a>'
                 f'<p class="m-0 text-[.93rem] text-ink-3">{esc(place)}</p>'
-                f'<p class="m-0"><span class="rounded-full border border-stroke bg-white/[.78] px-3 py-[3px] text-[.85rem] font-[750] text-brand-ink">{esc(price)}</span></p></li>')
+                f'<p class="m-0"><span class="rounded-full border border-stroke bg-surface/[.78] px-3 py-[3px] text-[.85rem] font-[750] text-brand-ink">{esc(price)}</span></p></li>')
         parts.append("      </ol>")
         parts.append(f'      <div class="{TILE} mt-4 flex flex-wrap items-center gap-3 bg-glass-hi">{_icon("gift", "tone-festival")}'
                      f'<p class="m-0 text-[1.25rem] font-extrabold tracking-[-.01em]">Итого: {result.total_cost} ₽, дорога около {result.total_travel_min} мин.</p></div>')

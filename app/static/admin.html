@@ -8,12 +8,12 @@
   <script src="/static/boot.js"></script>
   <link rel="stylesheet" href="/static/tailwind.css">
 </head>
-<body class="min-h-screen bg-art bg-[#eef2fb] bg-fixed text-ink antialiased">
+<body class="min-h-screen bg-art bg-page bg-fixed text-ink antialiased">
   <header class="mx-auto flex max-w-[1160px] flex-wrap items-center justify-between gap-3 px-4 pt-4">
-    <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-white">← К афише</a>
+    <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-surface">← К афише</a>
     <div class="flex items-center gap-3">
       <span id="actor" class="text-[.95rem] font-semibold text-ink-3" hidden></span>
-      <button type="button" id="logout" class="min-h-[40px] rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink shadow-surface hover:bg-white" hidden>Выйти</button>
+      <button type="button" id="logout" class="min-h-[40px] rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink shadow-surface hover:bg-surface" hidden>Выйти</button>
     </div>
   </header>
 
@@ -29,17 +29,17 @@
         <p id="login-error" role="alert" class="m-0 text-[.95rem] font-semibold text-bad" hidden></p>
       </form>
       <p class="m-0 text-[.85rem] text-ink-3">Ключ хранится только в этой вкладке и пропадает при закрытии. Все изменения записываются в журнал под вашим именем.</p>
-      <p class="m-0 text-[.85rem] text-ink-3">Если вам выдали роль модератора, ключ не нужен: войдите через Telegram в <a class="font-semibold text-brand underline" href="/account">кабинете</a> и вернитесь на эту страницу.</p>
+      <p class="m-0 text-[.85rem] text-ink-3">Если вам выдали роль модератора, ключ не нужен: войдите через Telegram в <a class="font-semibold text-accent underline" href="/account">кабинете</a> и вернитесь на эту страницу.</p>
     </section>
 
     <div id="app" hidden>
       <div class="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Разделы">
-        <button type="button" role="tab" data-tab="queue" aria-selected="true" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Очередь модерации <span id="queue-count" class="ml-1 rounded-full bg-white/75 px-2 text-[.78rem] font-bold text-ink-2"></span></button>
+        <button type="button" role="tab" data-tab="queue" aria-selected="true" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Очередь модерации <span id="queue-count" class="ml-1 rounded-full bg-surface/75 px-2 text-[.78rem] font-bold text-ink-2"></span></button>
         <button type="button" role="tab" data-tab="events" aria-selected="false" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Все события</button>
         <button type="button" role="tab" data-tab="import" aria-selected="false" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Импорт файла</button>
         <button type="button" role="tab" data-tab="audit" aria-selected="false" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Журнал изменений</button>
         <button type="button" role="tab" data-tab="sync" aria-selected="false" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Сбор</button>
-        <button type="button" role="tab" data-tab="feedback" aria-selected="false" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Обращения <span id="feedback-count" class="ml-1 rounded-full bg-white/75 px-2 text-[.78rem] font-bold text-ink-2"></span></button>
+        <button type="button" role="tab" data-tab="feedback" aria-selected="false" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white">Обращения <span id="feedback-count" class="ml-1 rounded-full bg-surface/75 px-2 text-[.78rem] font-bold text-ink-2"></span></button>
         <button type="button" role="tab" data-tab="users" id="tab-users" aria-selected="false" class="min-h-[42px] rounded-full border border-stroke bg-glass px-4 font-semibold tx-chip hover:bg-glass-hi aria-selected:border-brand aria-selected:bg-brand aria-selected:text-white" hidden>Пользователи и ключи</button>
       </div>
       <p id="notice" role="status" class="mb-3 rounded-ctl bg-ok-bg px-4 py-2 font-semibold text-ok" hidden></p>
@@ -49,7 +49,7 @@
   </main>
 
   <!-- Карточка события: создание и правка -->
-  <dialog id="edit-dialog" class="w-[min(680px,94vw)] rounded-panel border border-stroke bg-glass-solid p-0 text-ink shadow-surface-2 backdrop:bg-[rgba(23,32,54,.38)]">
+  <dialog id="edit-dialog" class="w-[min(680px,94vw)] rounded-panel border border-stroke bg-glass-solid p-0 text-ink shadow-surface-2 backdrop:bg-[rgb(var(--scrim)/.5)]">
     <form id="edit-form" method="dialog" class="grid gap-3 p-5">
       <h2 id="edit-title" class="m-0 text-[1.2rem] font-extrabold">Событие</h2>
       <div class="grid grid-cols-2 gap-3 w600:grid-cols-1">
@@ -70,21 +70,22 @@
       </div>
       <p id="edit-error" role="alert" class="m-0 font-semibold text-bad" hidden></p>
       <div class="flex flex-wrap justify-end gap-3">
-        <button type="button" id="edit-cancel" class="min-h-[44px] rounded-ctl border border-stroke bg-glass-hi px-5 font-bold text-brand-ink hover:bg-white">Отмена</button>
+        <button type="button" id="edit-cancel" class="min-h-[44px] rounded-ctl border border-stroke bg-glass-hi px-5 font-bold text-brand-ink hover:bg-surface">Отмена</button>
         <button type="submit" class="min-h-[44px] rounded-ctl bg-brand px-5 font-bold text-white shadow-cta hover:bg-brand-hover">Сохранить</button>
       </div>
     </form>
   </dialog>
 
   <!-- Журнал одного события -->
-  <dialog id="audit-dialog" class="w-[min(760px,94vw)] rounded-panel border border-stroke bg-glass-solid p-0 text-ink shadow-surface-2 backdrop:bg-[rgba(23,32,54,.38)]">
+  <dialog id="audit-dialog" class="w-[min(760px,94vw)] rounded-panel border border-stroke bg-glass-solid p-0 text-ink shadow-surface-2 backdrop:bg-[rgb(var(--scrim)/.5)]">
     <div class="grid gap-3 p-5">
       <h2 id="audit-title" class="m-0 text-[1.2rem] font-extrabold">Журнал события</h2>
       <div id="audit-body" class="max-h-[60vh] overflow-auto"></div>
-      <div class="flex justify-end"><button type="button" id="audit-close" class="min-h-[44px] rounded-ctl border border-stroke bg-glass-hi px-5 font-bold text-brand-ink hover:bg-white">Закрыть</button></div>
+      <div class="flex justify-end"><button type="button" id="audit-close" class="min-h-[44px] rounded-ctl border border-stroke bg-glass-hi px-5 font-bold text-brand-ink hover:bg-surface">Закрыть</button></div>
     </div>
   </dialog>
 
+  <script src="/static/api.js"></script>
   <script src="/static/admin.js"></script>
 </body>
 </html>

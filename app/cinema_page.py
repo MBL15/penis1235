@@ -19,9 +19,9 @@ from .search import SearchFilters, _conditions, search
 DAYS_AHEAD = 7  # на сколько дней вперёд есть переключатель дней
 TILE = "relative rounded-card border border-stroke bg-glass p-[18px] shadow-surface w1000:p-4"
 CHIP = ("inline-flex min-h-[40px] flex-none items-center whitespace-nowrap rounded-full border border-stroke bg-glass px-4 text-[.93rem] font-semibold text-ink "
-        "no-underline shadow-[0_4px_14px_rgba(52,64,120,.08)] tx-chip hover:bg-glass-hi aria-[current=true]:border-brand aria-[current=true]:bg-brand "
+        "no-underline shadow-[0_4px_14px_rgb(var(--shade)/.08)] tx-chip hover:bg-glass-hi aria-[current=true]:border-brand aria-[current=true]:bg-brand "
         "aria-[current=true]:text-white")
-TIME = ("inline-flex min-h-[36px] items-center rounded-[10px] border border-stroke bg-white/80 px-3 text-[.95rem] font-extrabold "
+TIME = ("inline-flex min-h-[36px] items-center rounded-[10px] border border-stroke bg-surface/80 px-3 text-[.95rem] font-extrabold "
         "text-brand-ink no-underline [font-variant-numeric:tabular-nums] tx-chip hover:bg-brand-tint")
 SESSIONS = re.compile(r"Сеансы \d{2}\.\d{2}: (.+?)\.?\s*$", re.S)
 FACTS = re.compile(r"^(?P<facts>.*?Длительность: [^.]*\.)\s*(?P<rest>.*)$", re.S)
@@ -116,7 +116,7 @@ def _film_html(film: dict, show_city: bool) -> str:
     age = f'<span class="rounded-full bg-brand-tint px-[10px] py-[3px] text-[.8rem] font-[750] text-brand-ink">{int(film["age"])}+</span>' \
         if film["age"] is not None else ""
     lowest = min(film["prices"]) if film["prices"] else None
-    price = (f'<span class="rounded-full border border-stroke bg-white/80 px-[10px] py-[3px] text-[.8rem] font-[750] text-ink-2">от {lowest} ₽</span>'
+    price = (f'<span class="rounded-full border border-stroke bg-surface/80 px-[10px] py-[3px] text-[.8rem] font-[750] text-ink-2">от {lowest} ₽</span>'
              if lowest else "")
     places = []
     for place in film["places"]:
@@ -160,7 +160,7 @@ def build_page(session: Session, query) -> str:
 
     head = f"""    <section class="grid grid-cols-3 gap-4 w600:gap-3" aria-labelledby="cinema-title">
       <div class="{TILE} col-span-3 bg-glass-hi">
-        <h1 id="cinema-title" class="mb-2 text-[length:clamp(1.8rem,4vw,2.6rem)] font-extrabold leading-[1.06] tracking-[-.03em]">Кино <span class="text-brand">на {esc(day_label)}</span></h1>
+        <h1 id="cinema-title" class="mb-2 text-[length:clamp(1.8rem,4vw,2.6rem)] font-extrabold leading-[1.06] tracking-[-.03em]">Кино <span class="text-accent">на {esc(day_label)}</span></h1>
         <p class="m-0 max-w-[62ch] text-[1.05rem] text-ink-3">Фильмы, кинотеатры и время сеансов. Данные взяты с Афиши (afisha.ru): цены и время перед походом сверьте по ссылке на источник.</p>
         <div class="mt-4"><h2 class="mb-2 text-[.76rem] font-extrabold uppercase tracking-[.08em] text-ink-3">День</h2><div class="flex flex-wrap gap-2 w600:flex-nowrap w600:overflow-x-auto">{day_chips}</div></div>
         {city_chips}
