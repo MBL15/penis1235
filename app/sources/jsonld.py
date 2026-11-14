@@ -85,7 +85,8 @@ def _price(value) -> int | None:
         number = Decimal(str(value).replace(",", ".").replace(" ", ""))
     except (InvalidOperation, ValueError):
         return None
-    return int(number) if 0 <= number <= 10_000_000 else None
+    # «NaN» и «Infinity» тоже разбираются как Decimal, а сравнение с NaN бросает InvalidOperation и роняло разбор страницы
+    return int(number) if number.is_finite() and 0 <= number <= 10_000_000 else None
 
 
 def prices_from_offers(offers) -> tuple[int | None, int | None, bool]:

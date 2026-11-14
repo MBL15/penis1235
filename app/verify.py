@@ -13,8 +13,10 @@
 
 Эта проверка работает без ИИ. Запуск: python -m app.verify run [--pending | --all] [--no-links]"""
 import argparse
+import http.client
 import ipaddress
 import logging
+import os
 import socket
 import sys
 import time
@@ -56,10 +58,70 @@ def public_url(url: str) -> tuple[bool, str]:
         infos = socket.getaddrinfo(parts.hostname, parts.port or (443 if parts.scheme == "https" else 80), type=socket.SOCK_STREAM)
     except socket.gaierror:
         return False, "адрес не найден"
-    for info in infos:
-        if not ipaddress.ip_address(info[4][0]).is_global:
-            return False, "внутренний адрес"
+    if not all(_is_public_ip(info[4][0]) for info in infos):
+        return False, "внутренний адрес"
     return True, ""
+
+
+def _is_public_ip(address: str) -> bool:
+    try:
+        return ipaddress.ip_address(address).is_global
+    except ValueError:
+        return False
+
+
+class InternalAddressError(OSError):
+    """Имя хоста в момент соединения указывает на внутренний адрес: соединение не открывается."""
+
+
+def pinned_connection(address: tuple[str, int], timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None, **_):
+    """Замена socket.create_connection для проверки ссылок: имя разрешается один раз, каждый адрес проверяется, и соединение
+    открывается именно с проверенным адресом.
+
+    Проверка public_url перед запросом сама по себе не спасает: urllib разрешает имя ещё раз, и DNS с коротким временем жизни
+    записи успевает ответить уже внутренним адресом (DNS rebinding). Здесь между проверкой и соединением второго разрешения нет."""
+    host, port = address
+    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)  # gaierror уходит наружу: urllib превратит её в «адрес не найден»
+    if not infos or not all(_is_public_ip(info[4][0]) for info in infos):
+        raise InternalAddressError(f"внутренний адрес: {host}")
+    last: OSError | None = None
+    for family, kind, proto, _, sockaddr in infos:
+        sock = socket.socket(family, kind, proto)
+        try:
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as exc:
+            sock.close()
+            last = exc
+    raise last or OSError(f"не удалось соединиться с {host}")
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = pinned_connection
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """Сертификат по-прежнему проверяется по имени хоста (SNI и check_hostname): к проверенному IP подключаемся только на уровне TCP."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = pinned_connection
+
+
+class _PinnedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_PinnedHTTPConnection, req)
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_PinnedHTTPSConnection, req, context=getattr(self, "_context", None))
 
 
 class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
@@ -72,8 +134,17 @@ class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+def build_link_opener() -> urllib.request.OpenerDirector:
+    """Открыватель ссылок для проверки. Прокси окружения не используется (как и у сборщика источников, app/sources/base.py):
+    через прокси имя разрешает уже он, и привязать соединение к проверенному адресу нельзя. AFISHA_USE_PROXY=1 включает прокси:
+    тогда остаётся проверка public_url перед запросом и при каждом перенаправлении."""
+    if os.getenv("AFISHA_USE_PROXY") == "1":
+        return urllib.request.build_opener(_CheckedRedirects())
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _PinnedHTTPHandler(), _PinnedHTTPSHandler(), _CheckedRedirects())
+
+
 def _default_open(request: urllib.request.Request, timeout: float):
-    return urllib.request.build_opener(_CheckedRedirects()).open(request, timeout=timeout)
+    return build_link_opener().open(request, timeout=timeout)
 
 
 def check_link(url: str, *, timeout: float | None = None, opener=None) -> LinkResult:
@@ -91,13 +162,19 @@ def check_link(url: str, *, timeout: float | None = None, opener=None) -> LinkRe
         request = urllib.request.Request(url, method=method, headers={"User-Agent": USER_AGENT, "Accept": "text/html,*/*;q=0.5"})
         try:
             response = opener(request, timeout)
-            code = getattr(response, "status", None) or response.getcode()
-            if method == "GET":
-                response.read(512)
+            try:
+                code = getattr(response, "status", None) or response.getcode()
+                if method == "GET":
+                    response.read(512)
+            finally:  # иначе каждое соединение висит открытым до сборки мусора: проверка идёт по сотням ссылок
+                close = getattr(response, "close", None)
+                if close is not None:
+                    close()
             if 200 <= code < 400:
                 return LinkResult("ok", code)
             last = LinkResult("unknown", code, f"ответ {code}")
         except urllib.error.HTTPError as exc:
+            exc.close()
             if exc.code in (404, 410):
                 return LinkResult("dead", exc.code, f"страница не найдена ({exc.code})")
             last = LinkResult("unknown", exc.code, f"ответ {exc.code}")

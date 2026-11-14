@@ -33,6 +33,20 @@ class BlockedError(SourceError):
     """Сайт просит остановиться (капча, 403, 429). Обход прекращается, обходить блокировку нельзя."""
 
 
+class _AllowedRedirects(urllib.request.HTTPRedirectHandler):
+    """Перенаправление проверяется до того, как по нему пойдёт запрос: иначе ответ «302 на http://127.0.0.1/…» от источника
+    заставил бы сервер обратиться к внутреннему адресу, а проверка итогового адреса сработала бы уже после запроса."""
+
+    def __init__(self, host_ok: Callable[[str], bool]):
+        super().__init__()
+        self._host_ok = host_ok
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not self._host_ok(newurl):
+            raise SourceError(f"{req.full_url}: перенаправление на посторонний адрес {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 class Fetcher:
     """Загрузчик страниц с проверкой robots.txt, паузами, повторами и защитой от лишнего."""
 
@@ -54,8 +68,10 @@ class Fetcher:
         self.user_agent = user_agent
         # Российские сайты через зарубежный прокси недоступны, поэтому по умолчанию идём напрямую
         # (AFISHA_USE_PROXY=1 включает прокси окружения).
+        redirects = _AllowedRedirects(self.host_ok)
         self.opener = opener or (
-            urllib.request.build_opener() if os.getenv("AFISHA_USE_PROXY") == "1" else urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            urllib.request.build_opener(redirects) if os.getenv("AFISHA_USE_PROXY") == "1"
+            else urllib.request.build_opener(urllib.request.ProxyHandler({}), redirects)
         )
         self._sleep, self._clock = sleep, clock
         self._robots: dict[str, RobotFileParser | None] = {}

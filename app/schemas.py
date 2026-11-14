@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -372,7 +372,8 @@ class ChatTurn(BaseModel):
 class AskIn(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=20)
-    context_event_ids: list[int] = Field(
+    # Номера в пределах INTEGER базы: иначе SQLite не может подставить число в запрос и отвечает 500
+    context_event_ids: list[Annotated[int, Field(ge=1, le=2**31 - 1)]] = Field(
         default_factory=list, max_length=10,
         description="Номера событий из прошлого ответа: нужны для уточнений «а ещё», «в другой день», «что-нибудь похожее»")
 

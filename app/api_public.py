@@ -382,8 +382,9 @@ def ask(payload: AskIn, session: SessionDep) -> AskOut:
     history = [turn.model_dump() for turn in payload.history]
     result = agent_ask(session, payload.message, history, context_event_ids=payload.context_event_ids)
     metrics.inc("afisha_ask_total", mode=result.mode, provider=result.provider or "none")
+    flags = _trace_flags(session, result.trace_id)  # один запрос к базе, а не по одному на каждую отметку
     for flag in ("injection", "offtopic"):
-        if flag in _trace_flags(session, result.trace_id):
+        if flag in flags:
             metrics.inc("afisha_agent_blocked_total", reason=flag)
     now = now_local()
     return AskOut(

@@ -380,7 +380,10 @@ def admin_users(session: SessionDep, role: Annotated[str | None, Query(pattern="
     if role:
         stmt = stmt.where(User.role == role)
     if q:
-        stmt = stmt.where(or_(User.display_name.ilike(f"%{q.strip()}%"), User.telegram_id == int(q) if q.strip().isdigit() else False))
+        text = q.strip()
+        # Номер Telegram: только ASCII-цифры и в пределах BIGINT, иначе int() или запрос к базе падают с 500
+        by_id = text.isascii() and text.isdigit() and int(text) < 2**63
+        stmt = stmt.where(or_(User.display_name.ilike(f"%{text}%"), User.telegram_id == int(text) if by_id else False))
     return [_user_admin(u) for u in session.scalars(stmt.limit(limit).offset(offset))]
 
 

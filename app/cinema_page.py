@@ -5,6 +5,7 @@
 import re
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
+from urllib.parse import urlencode
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -90,12 +91,13 @@ def _cinema_cities(session: Session, now: datetime) -> list[tuple[str, int]]:
 
 
 def _link(day: date, city: str, today: date) -> str:
-    params = []
+    params = {}
     if day != today:
-        params.append(f"day={day.isoformat()}")
+        params["day"] = day.isoformat()
     if city:
-        params.append("city=" + esc(city))
-    return "/cinema" + ("?" + "&amp;".join(params) if params else "")
+        params["city"] = city
+    # Сначала кодируем для адреса («&», «#», пробел в названии города ломали ссылку), потом экранируем для HTML-атрибута
+    return "/cinema" + ("?" + esc(urlencode(params)) if params else "")
 
 
 def _stat(icon: str, tone: str, value: int, label: str) -> str:

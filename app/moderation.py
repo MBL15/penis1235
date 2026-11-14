@@ -23,7 +23,8 @@ def edit_event(session: Session, event: Event, patch: EventPatch, actor: str) ->
     before = audit.snapshot(event)
 
     for field, value in values.items():
-        if field in ("title", "city") and (value is None or not str(value).strip()):
+        # Обязательные поля: null раньше доходил до базы (NOT NULL) или до make_dedup_key и давал 500
+        if field in ("title", "city", "start_at", "kids_friendly") and (value is None or not str(value).strip()):
             raise EditError(f"Поле {field} нельзя очистить")
         if field == "title":
             event.title = value.strip()
