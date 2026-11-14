@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
+from fastapi.responses import Response
 
 from . import audit, config
 from .auth import is_account_actor, require_admin
@@ -189,3 +190,24 @@ def feedback_status(feedback_id: Annotated[int, Path(ge=1, le=2**31 - 1)], paylo
     if item is None:
         raise HTTPException(404, "Обращение не найдено")
     return item
+
+
+# ---------- аналитика по пользователям ----------
+
+@router.get("/analytics", summary="Сводка по пользователям: аккаунты, активность, популярное, подписки, обращения, помощник")
+def analytics_overview(session: SessionDep) -> dict:
+    from .analytics import overview
+
+    return overview(session, now_local())
+
+
+@router.get("/analytics/users.csv", summary="Выгрузка по пользователям (CSV для Excel)",
+            response_class=Response,
+            responses={200: {"content": {"text/csv": {}}, "description": "По строке на аккаунт; без номера Telegram"}})
+def analytics_users_csv(session: SessionDep) -> Response:
+    from .analytics import to_csv, users_rows
+
+    now = now_local()
+    body = to_csv(users_rows(session, now))
+    return Response(body.encode("utf-8"), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="afisha-users-{now:%Y-%m-%d}.csv"', "Cache-Control": "no-store"})

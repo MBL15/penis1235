@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from . import audit, config
 from .config import now_local
 from .deps import SessionDep
-from .models import ApiKey, Event, Feedback, SavedSearch, Subscription, User, UserSession, VisitHistory
+from .models import ApiKey, Event, Feedback, LoginRequest, SavedSearch, Subscription, User, UserSession, VisitHistory
 from .security import RateLimiter, auth_limiter, partner_limiter
 from .telegram_auth import TelegramUser
 
@@ -35,6 +35,8 @@ MAX_KEYS_PER_USER = 5
 DEFAULT_KEY_LIMIT = 600  # запросов в минуту
 MAX_KEY_LIMIT = 6000
 KEY_PREFIX = "afk_"
+LOGIN_TTL = timedelta(minutes=5)  # вход через бота: столько живёт ссылка t.me/<бот>?start=login_<код>
+LOGIN_CODE = re.compile(r"^[A-Za-z0-9_-]{16,40}$")
 
 
 # ---------- вход и сессии ----------
@@ -383,3 +385,61 @@ def key_view(key: ApiKey) -> dict:
 
 def clean_name(value: str, fallback: str = "") -> str:
     return re.sub(r"[\x00-\x1f\x7f]", "", value or "").strip()[:80] or fallback
+
+
+# ---------- вход через бота ----------
+
+def start_bot_login(session: Session) -> tuple[str, str]:
+    """Новый запрос входа: (код для ссылки в бот, секрет браузера для куки). В базе только их хеши."""
+    now = now_local()
+    session.execute(delete(LoginRequest).where(LoginRequest.expires_at < now - timedelta(hours=1)))
+    code, secret = secrets.token_urlsafe(16), secrets.token_urlsafe(32)
+    session.add(LoginRequest(code_hash=hash_token(code), browser_hash=hash_token(secret), created_at=now, expires_at=now + LOGIN_TTL))
+    session.commit()
+    return code, secret
+
+
+def pending_bot_login(session: Session, code: str) -> LoginRequest | None:
+    """Запрос, который ещё можно подтвердить в боте: не просрочен, не подтверждён и не использован."""
+    if not LOGIN_CODE.fullmatch(code or ""):
+        return None
+    row = session.get(LoginRequest, hash_token(code))
+    if row is None or row.expires_at < now_local() or row.confirmed_at or row.used_at:
+        return None
+    return row
+
+
+def confirm_bot_login(session: Session, code: str, tg: TelegramUser) -> bool:
+    """Человек нажал «Подтвердить» в боте: запрос запоминает, кто он. Номер берётся из самого Telegram, не из ссылки."""
+    row = pending_bot_login(session, code)
+    if row is None:
+        return False
+    row.telegram_id, row.display_name, row.confirmed_at = tg.id, tg.name[:100], now_local()
+    session.commit()
+    return True
+
+
+def cancel_bot_login(session: Session, code: str) -> None:
+    row = pending_bot_login(session, code)
+    if row is not None:
+        row.expires_at = now_local()
+        session.commit()
+
+
+def finish_bot_login(session: Session, code: str, secret: str | None) -> tuple[str, User | None]:
+    """Страница спрашивает, подтверждён ли вход: ('pending' | 'expired' | 'denied' | 'ok', аккаунт). Забрать вход можно один раз
+    и только из браузера, который его начал (секрет в куке): чужая ссылка не войдёт за другого."""
+    if not LOGIN_CODE.fullmatch(code or "") or not secret or len(secret) > 200:
+        return "denied", None
+    row = session.get(LoginRequest, hash_token(code))
+    if row is None or not secrets.compare_digest(row.browser_hash, hash_token(secret)):
+        return "denied", None
+    if row.used_at:
+        return "expired", None
+    if row.confirmed_at is None:
+        return ("expired", None) if row.expires_at < now_local() else ("pending", None)
+    row.used_at = now_local()
+    session.commit()
+    user, _ = sign_in(session, TelegramUser(int(row.telegram_id), row.display_name or f"Пользователь {row.telegram_id}"))
+    return "ok", user
+

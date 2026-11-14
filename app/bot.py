@@ -16,17 +16,18 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
     BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, Message, WebAppInfo,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.orm import Session
 
-from . import agent_actions, config, dialogs, feedback, subscriptions
+from . import accounts, agent_actions, config, dialogs, feedback, subscriptions
 from .agent import ask
 from .config import now_local
 from .db import SessionLocal, init_db
+from .telegram_auth import TelegramUser
 from .formatting import render_event, render_list
 from .hints import empty_hint
 from .models import Event, Feedback, Subscription, User
@@ -412,6 +413,41 @@ def agent_view(chat_id: int, text: str) -> View:
 
 
 # ---------- обработчики ----------
+
+@router.message(CommandStart(deep_link=True, magic=F.args.startswith("login_")))
+async def on_login_link(message: Message, command: CommandObject) -> None:
+    """Ссылка «Войти через Telegram» с сайта: t.me/<бот>?start=login_<код>. Вход выполняется только по кнопке."""
+    code = (command.args or "")[len("login_"):]
+    with SessionLocal() as session:
+        ok = accounts.pending_bot_login(session, code) is not None
+    if not ok:
+        await message.answer("Ссылка для входа устарела. Нажмите «Войти через Telegram» на сайте ещё раз.")
+        return
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Войти на сайт", callback_data=f"lg:ok:{code}")
+    kb.button(text="✖ Это не я", callback_data=f"lg:no:{code}")
+    kb.adjust(2)
+    await message.answer("Вход на сайт «Афиша культуры» под вашим аккаунтом Telegram.\n"
+                         "Подтверждайте, только если вы сами только что нажали «Войти» на сайте.", reply_markup=kb.as_markup())
+
+
+@router.callback_query(F.data.startswith("lg:"))
+async def on_login_confirm(call: CallbackQuery) -> None:
+    _, verdict, code = call.data.split(":", 2)
+    user = call.from_user
+    with SessionLocal() as session:
+        if verdict == "ok":
+            name = " ".join(p for p in (user.first_name, user.last_name) if p) or f"Пользователь {user.id}"
+            done = accounts.confirm_bot_login(session, code, TelegramUser(user.id, name))
+            text = ("Готово: вернитесь на сайт, вход выполнится сам." if done
+                    else "Ссылка для входа устарела. Нажмите «Войти через Telegram» на сайте ещё раз.")
+        else:
+            accounts.cancel_bot_login(session, code)
+            text = "Вход отменён."
+    await call.answer()
+    if call.message:
+        await call.message.edit_text(text)
+
 
 @router.message(CommandStart())
 async def on_start(message: Message) -> None:

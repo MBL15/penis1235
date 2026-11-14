@@ -216,6 +216,40 @@ def login_callback(nonce: Annotated[str, Path(pattern=r"^[A-Za-z0-9_-]{16,64}$")
     return redirect
 
 
+BOT_LOGIN_COOKIE = "afisha_login_req"
+
+
+@router.post("/auth/telegram/bot", summary="Начать вход через бота Telegram (без виджета и привязки домена)")
+def bot_login_start(request: Request, response: Response, session: SessionDep) -> dict:
+    """Ссылка `url` открывает бота с одноразовым кодом; человек подтверждает вход кнопкой в боте, затем страница спрашивает
+    `GET /auth/telegram/bot/{code}`. Секрет браузера уходит в куку HttpOnly: забрать вход может только этот браузер."""
+    _limit(request)
+    if not config.TELEGRAM_BOT_TOKEN:
+        raise HTTPException(503, "Вход через Telegram на этом сервере не настроен")
+    code, secret = accounts.start_bot_login(session)
+    response.set_cookie(BOT_LOGIN_COOKIE, secret, max_age=int(accounts.LOGIN_TTL.total_seconds()), httponly=True,
+                        secure=config.PUBLIC_URL.startswith("https://"), samesite="lax", path="/api/v1/auth/telegram/bot")
+    return {"code": code, "url": f"https://t.me/{config.TELEGRAM_BOT_USERNAME}?start=login_{code}",
+            "expires_in": int(accounts.LOGIN_TTL.total_seconds())}
+
+
+@router.get("/auth/telegram/bot/{code}", summary="Подтверждён ли вход через бота")
+def bot_login_poll(code: Annotated[str, Path(pattern=r"^[A-Za-z0-9_-]{16,40}$")], request: Request, response: Response,
+                   session: SessionDep) -> Response:
+    """202 — ждём подтверждения в боте; 200 — вход выполнен (кука `afisha_session`); 410 — ссылка устарела; 403 — чужой запрос."""
+    status, user = accounts.finish_bot_login(session, code, request.cookies.get(BOT_LOGIN_COOKIE))
+    if status == "pending":
+        return JSONResponse({"status": "pending"}, status_code=202, headers={"Cache-Control": "no-store"})
+    if status == "expired":
+        raise HTTPException(410, "Ссылка для входа устарела: нажмите «Войти через Telegram» ещё раз")
+    if status == "denied":
+        raise HTTPException(403, "Этот вход начат в другом браузере")
+    out = JSONResponse(me_out(user).model_dump(mode="json"), headers={"Cache-Control": "no-store"})
+    accounts.set_login_cookie(out, accounts.start_session(session, user))
+    out.delete_cookie(BOT_LOGIN_COOKIE, path="/api/v1/auth/telegram/bot")
+    return out
+
+
 @router.post("/auth/logout", status_code=204, summary="Выйти")
 def logout(request: Request, session: SessionDep) -> Response:
     token = request.cookies.get(accounts.SESSION_COOKIE)
@@ -447,3 +481,18 @@ def admin_revoke_key(key_id: Annotated[int, Path(ge=1, le=2**31 - 1)], session: 
     audit.record(session, actor, "api_key", None, {"key_id": key.id, "revoked": True})
     accounts.revoke_api_key(session, key)
     return Response(status_code=204)
+
+
+@router.get("/me/insights", summary="Мои интересы и рекомендации")
+def my_insights(user: CurrentUser, session: SessionDep, limit: Annotated[int, Query(ge=1, le=12)] = 6) -> dict:
+    """Профиль интересов из вашей истории посещений (если включена), подписок и сохранённых поисков, и до `limit` ближайших
+    событий, которых вы ещё не открывали, с объяснением, почему они подобраны. Нет данных — популярное у посетителей."""
+    from .analytics import build_profile, profile_out, recommend
+    from .config import now_local
+    from .formatting import event_to_out
+
+    now = now_local()
+    profile = build_profile(session, user, now)
+    picks = recommend(session, user, now, limit=limit, profile=profile)
+    return {"profile": profile_out(profile), "personal": not profile.empty,
+            "recommendations": [{"event": event_to_out(e, now), "reasons": why} for e, why in picks]}

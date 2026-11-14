@@ -81,7 +81,7 @@
     document.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
     view.offset = 0; view.query = '';
     view.publication = name === 'queue' ? 'draft' : 'all';
-    ({ queue: showEvents, events: showEvents, import: showImport, audit: showAudit, sync: showSync, feedback: showFeedback, users: showUsers }[name])();
+    ({ queue: showEvents, events: showEvents, import: showImport, audit: showAudit, sync: showSync, feedback: showFeedback, users: showUsers, analytics: showAnalytics }[name])();
   }
 
   const when = (iso) => (iso ? iso.replace('T', ' ').slice(0, 16) : '');
@@ -332,6 +332,52 @@
   }
 
   // ---------- пользователи, роли и ключи Министерства (только по ключу администратора) ----------
+  // Сводка по пользователям и выгрузка CSV (GET /api/v1/admin/analytics, /analytics/users.csv)
+  async function showAnalytics() {
+    const panel = $('#panel');
+    panel.innerHTML = '<div class="ui-skeleton"></div>';
+    const d = await api('/api/v1/admin/analytics');
+    const u = d.users; const g = d.engagement_30d;
+    const stat = (value, label) => `<div class="grid gap-1 rounded-ctl border border-stroke bg-glass p-4"><strong class="text-[1.6rem] leading-none">${Number(value) || 0}</strong><span class="text-[.85rem] text-ink-3">${esc(label)}</span></div>`;
+    const table = (title, rows, cols) => `<section class="grid gap-2"><h3 class="m-0 text-[1rem] font-extrabold">${esc(title)}</h3>${rows.length
+      ? `<table class="w-full border-collapse text-[.92rem]"><tbody>${rows.map((r) => `<tr class="border-t border-[rgb(var(--ink)/var(--line-a))]">${cols.map((c, i) => `<td class="py-1.5 ${i ? 'text-right font-semibold' : ''}">${esc(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+      : '<p class="m-0 text-ink-3">Пока нет данных.</p>'}</section>`;
+    const peak = Math.max(1, ...g.daily_visits_14d.map((x) => x.visits));
+    const bars = g.daily_visits_14d.map((x) => `<div class="grid justify-items-center gap-1" title="${esc(x.date)}: ${Number(x.visits)}"><div class="w-full rounded-t bg-brand" style="height:${Math.round(70 * x.visits / peak) + 2}px"></div><span class="text-[.7rem] text-ink-3">${esc(x.date.slice(8))}</span></div>`).join('');
+    const pairs = (obj) => Object.entries(obj || {}).map(([k, v]) => ({ k, v }));
+    panel.innerHTML = `
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 class="m-0 text-[1.1rem] font-extrabold">Аналитика по пользователям</h2>
+        <button type="button" class="${BTN}" id="csv-users">Скачать CSV по пользователям</button>
+      </div>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
+        ${stat(u.total, 'аккаунтов всего')}${stat(u.new_7d, 'новых за 7 дней')}${stat(u.active_7d, 'активных за 7 дней')}${stat(u.active_30d, 'активных за 30 дней')}
+        ${stat(u.history_enabled, 'с включённой историей')}${stat(g.visits, 'просмотров за 30 дней')}${stat(g.ticket_clicks, 'переходов к билетам')}${stat(d.subscriptions.total, 'подписок')}
+      </div>
+      <section class="mt-5 grid gap-2"><h3 class="m-0 text-[1rem] font-extrabold">Просмотры по дням, 14 дней</h3>
+        <div class="grid grid-cols-[repeat(14,minmax(0,1fr))] items-end gap-1" style="height:96px">${bars}</div></section>
+      <div class="mt-5 grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-5">
+        ${table('Популярные события, 30 дней', g.top_events, ['title', 'visits'])}
+        ${table('Категории по просмотрам', g.top_categories, ['label', 'visits'])}
+        ${table('Города по просмотрам', g.top_cities, ['name', 'visits'])}
+        ${table('Подписки по городам', d.subscriptions.by_city, ['name', 'count'])}
+        ${table('Подписки по категориям', d.subscriptions.by_category, ['label', 'count'])}
+        ${table('Роли', pairs(u.by_role), ['k', 'v'])}
+        ${table('Обращения по статусам', pairs(d.feedback), ['k', 'v'])}
+        ${table('Ответы помощника за 7 дней', pairs(d.assistant_7d).map((x) => ({ k: x.k === 'llm' ? 'модель' : 'без ИИ', v: x.v })), ['k', 'v'])}
+      </div>
+      <p class="mt-4 text-[.85rem] text-ink-3">В выгрузке по строке на аккаунт: роль, даты, просмотры, подписки, поиски, обращения, любимая категория и город. Номер Telegram не выгружается.</p>`;
+    $('#csv-users').addEventListener('click', () => guarded(async () => {
+      // Скачивание с тем же ключом/входом, что у остальной админки: через fetch, затем файл из памяти
+      const res = await fetch('/api/v1/admin/analytics/users.csv', { headers: key ? { 'X-API-Key': key } : {}, credentials: 'same-origin' });
+      if (!res.ok) throw new Error(`Выгрузка не удалась (${res.status})`);
+      const url = URL.createObjectURL(await res.blob());
+      const link = Object.assign(document.createElement('a'), { href: url, download: `afisha-users-${new Date().toISOString().slice(0, 10)}.csv` });
+      document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      say('Файл CSV скачан.');
+    }));
+  }
+
   async function showUsers() {
     const roleOptions = (current) => Object.entries(ROLES).map(([k, v]) => `<option value="${k}"${k === current ? ' selected' : ''}>${esc(v)}</option>`).join('');
     $('#panel').innerHTML = `

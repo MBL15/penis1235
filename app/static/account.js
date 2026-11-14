@@ -79,6 +79,8 @@
     box.textContent = '';
     if (!me.login.enabled) { $('#login-off').hidden = false; return; }
     if (inTelegram) { $('#tg-miniapp').hidden = false; return; }
+    $('#bot-login').hidden = false;
+    $('#tg-login-alt').hidden = false;
     // Одноразовый nonce: кука и адрес возврата должны совпасть, иначе чужая ссылка могла бы войти в чужой аккаунт за посетителя.
     const bytes = crypto.getRandomValues(new Uint8Array(18));
     const nonce = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -92,6 +94,28 @@
     script.setAttribute('data-auth-url', `${location.origin}/api/v1/auth/telegram/callback/${nonce}`);
     box.appendChild(script);
   }
+
+  // Вход через бота: не нужен ни виджет telegram.org (в России открывается не всегда), ни привязка домена в BotFather.
+  // Сайт берёт одноразовую ссылку в бот, человек подтверждает вход кнопкой в боте, страница сама забирает вход.
+  let botPoll = null;
+  $('#bot-login-btn').addEventListener('click', () => guarded(async () => {
+    const status = $('#bot-login-status');
+    const start = await api.post('/api/v1/auth/telegram/bot', {});
+    window.open(start.url, '_blank', 'noopener');
+    status.textContent = 'Ждём подтверждения в боте… Если бот не открылся, перейдите по ссылке: ' + start.url;
+    clearInterval(botPoll);
+    const until = Date.now() + start.expires_in * 1000;
+    botPoll = setInterval(async () => {
+      if (Date.now() > until) { clearInterval(botPoll); status.textContent = 'Ссылка устарела. Нажмите «Войти через Telegram» ещё раз.'; return; }
+      try {
+        const res = await fetch(`/api/v1/auth/telegram/bot/${encodeURIComponent(start.code)}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+        if (res.status === 202) return;
+        clearInterval(botPoll);
+        if (res.ok) { me = await res.json(); render(); return; }
+        status.textContent = res.status === 410 ? 'Ссылка устарела. Нажмите «Войти через Telegram» ещё раз.' : 'Вход не выполнен. Попробуйте ещё раз.';
+      } catch (_) { /* сеть моргнула — спросим ещё раз через пару секунд */ }
+    }, 2000);
+  }));
 
   $('#tg-miniapp').addEventListener('click', () => guarded(async () => {
     const initData = await telegramInitData();
@@ -114,7 +138,7 @@
     app.hidden = false;
     app.innerHTML = `
       <nav class="ui-jump" id="jump" aria-label="Разделы кабинета">
-        <a href="#hist">История</a><a href="#subs">Подписки</a><a href="#srch">Поиски</a><a href="#fb">Обращения</a>${role === 'ministry' ? '<a href="#min">Ключи</a>' : ''}<a href="#data">Мои данные</a>
+        <a href="#recs">Для вас</a><a href="#hist">История</a><a href="#subs">Подписки</a><a href="#srch">Поиски</a><a href="#fb">Обращения</a>${role === 'ministry' ? '<a href="#min">Ключи</a>' : ''}<a href="#data">Мои данные</a>
       </nav>
       <section class="${CARD}" aria-labelledby="who">
         <h2 id="who" class="${H2}">${esc(user.display_name || 'Без имени')}</h2>
@@ -122,6 +146,13 @@
         ${role === 'moderator' ? `<p class="m-0"><a class="${LINK}" href="/admin">Открыть администрирование афиши</a></p>` : ''}
         ${role === 'organizer' ? `<p class="m-0"><a class="${LINK}" href="/feedback?kind=organizer">Отправить заявку: добавить или уточнить событие</a></p>` : ''}
         ${role === 'user' ? `<p class="${MUTED}">Организатору или представителю Министерства роль выдаёт администратор афиши. Чтобы получить её, напишите через <a class="${LINK}" href="/feedback?kind=organizer">форму обратной связи</a>.</p>` : ''}
+      </section>
+
+      <section class="${CARD}" id="recs" aria-labelledby="recs-title">
+        <h2 id="recs-title" class="${H2}">Рекомендации для вас</h2>
+        <p class="${MUTED}" id="recs-why">Подбираем по вашей истории посещений, подпискам и сохранённым поискам.</p>
+        <div id="recs-profile" class="flex flex-wrap gap-2"></div>
+        <div id="recs-list" class="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-3"></div>
       </section>
 
       <section class="${CARD}" id="hist" aria-labelledby="hist-title">
@@ -196,7 +227,7 @@
     // Блоки появляются по очереди; пункт панели переходов подсвечивается по мере прокрутки
     [...app.children].forEach((node, index) => { node.style.setProperty('--i', String(index)); node.classList.add('ui-rise'); });
     watchSections();
-    loadHistory(); loadSubs(); loadSearches(); loadFeedback();
+    loadInsights(); loadHistory(); loadSubs(); loadSearches(); loadFeedback();
     if (role === 'ministry') { loadKeys(); loadStats(); }
   }
 
@@ -217,6 +248,36 @@
   }
 
   // ---------- история ----------
+
+  // Рекомендации: профиль интересов и события, которых вы ещё не открывали, с объяснением (GET /api/v1/me/insights)
+  async function loadInsights() {
+    const list = $('#recs-list');
+    list.innerHTML = '<div class="ui-skeleton"></div><div class="ui-skeleton"></div><div class="ui-skeleton"></div>';
+    try {
+      const data = await api('/api/v1/me/insights');
+      const p = data.profile;
+      const chips = [
+        ...p.top_categories.map((c) => esc(c.label)),
+        ...p.top_cities.map((c) => esc(c.name)),
+        p.median_price ? `около ${Number(p.median_price)} ₽` : '',
+        p.events_viewed ? `открыто событий: ${Number(p.events_viewed)}` : '',
+      ].filter(Boolean);
+      $('#recs-profile').innerHTML = chips.map((c) => `<span class="rounded-full border border-stroke bg-glass px-3 py-1 text-[.88rem] font-semibold">${c}</span>`).join('');
+      $('#recs-why').textContent = data.personal
+        ? 'Подобрано по вашим интересам: ниже под каждым событием — почему оно здесь.'
+        : 'Пока мы мало о вас знаем: показываем популярное. Включите историю посещений или оформите подписку — подборка станет личной.';
+      list.innerHTML = data.recommendations.length ? data.recommendations.map(({ event: e, reasons }) => `
+        <a class="grid content-start gap-1 rounded-ctl border border-stroke bg-glass p-4 text-inherit no-underline shadow-surface transition hover:-translate-y-0.5 hover:bg-surface" href="/event/${Number(e.id) || 0}">
+          <span class="text-[.74rem] font-extrabold uppercase tracking-[.08em] text-accent">${esc(e.category_label)}</span>
+          <strong class="text-[1.02rem] leading-[1.25]">${esc(e.title)}</strong>
+          <span class="text-[.9rem] text-ink-2">${esc(new Date(e.start_at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }))} · ${esc([e.venue, e.city].filter(Boolean).join(', '))}</span>
+          <span class="text-[.9rem] font-semibold">${esc(e.price_text)}</span>
+          <span class="text-[.85rem] text-ink-3">${reasons.map(esc).join(' · ')}</span>
+        </a>`).join('') : `<p class="${MUTED}">Подходящих будущих событий пока нет.</p>`;
+    } catch (_) {
+      list.innerHTML = `<p class="${MUTED}">Не удалось загрузить рекомендации. Обновите страницу.</p>`;
+    }
+  }
 
   async function loadHistory() {
     await guarded(async () => {

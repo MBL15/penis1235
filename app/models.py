@@ -279,3 +279,21 @@ class BotDialog(Base):
     history: Mapped[list] = mapped_column(JSON, default=list)  # [{role, content}], не больше app.dialogs.MAX_TURNS
     event_ids: Mapped[list] = mapped_column(JSON, default=list)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_local, index=True)
+
+
+class LoginRequest(Base):
+    """Вход на сайт через бота (без виджета telegram.org и привязки домена в BotFather): сайт выдаёт одноразовый код и ссылку
+    t.me/<бот>?start=login_<код>, человек подтверждает вход кнопкой в боте, страница забирает вход. В базе только хеши кода и
+    секрета браузера: забрать вход может лишь тот браузер, который его начал. Живёт accounts.LOGIN_TTL."""
+
+    __tablename__ = "login_requests"
+
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    browser_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    display_name: Mapped[str] = mapped_column(String(100), default="")
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+

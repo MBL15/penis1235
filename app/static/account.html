@@ -29,6 +29,11 @@
     <section id="login" class="grid gap-4 rounded-panel border border-stroke bg-glass-hi p-6 shadow-surface w600:p-4" aria-labelledby="login-title" hidden>
       <h2 id="login-title" class="m-0 text-[1.2rem] font-extrabold">Вход через Telegram</h2>
       <p class="m-0 text-ink-2">Афиша работает и без входа. Кабинет нужен, чтобы история посещений, подписки и сохранённые поиски были с вами на любом устройстве. Паролей нет: вы входите своим аккаунтом Telegram, мы получаем только ваш номер в Telegram и имя.</p>
+      <div id="bot-login" class="grid gap-2" hidden>
+        <button type="button" id="bot-login-btn" class="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-ctl bg-brand px-6 text-[1.02rem] font-bold text-white shadow-cta tx-btn hover:bg-brand-hover">Войти через Telegram</button>
+        <p id="bot-login-status" class="m-0 text-[.92rem] text-ink-3" role="status" aria-live="polite">Откроется наш бот: нажмите в нём «Войти на сайт», и эта страница войдёт сама. Пароль не нужен.</p>
+      </div>
+      <p id="tg-login-alt" class="m-0 text-[.85rem] text-ink-3" hidden>Или кнопкой Telegram (если открывается telegram.org):</p>
       <div id="tg-login" class="min-h-[48px]"></div>
       <button type="button" id="tg-miniapp" class="min-h-[48px] rounded-ctl bg-brand px-6 font-bold text-white shadow-cta tx-btn hover:bg-brand-hover" hidden>Войти как этот пользователь Telegram</button>
       <p id="login-off" class="m-0 text-ink-3" hidden>Вход через Telegram на этом сервере не настроен.</p>
