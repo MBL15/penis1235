@@ -60,6 +60,11 @@ API_RATE_LIMIT = _int_env("API_RATE_LIMIT", 300) or 300
 LLM_MAX_CONCURRENCY = _int_env("LLM_MAX_CONCURRENCY", 4) or 4
 LLM_DAILY_LIMIT = _int_env("LLM_DAILY_LIMIT", 3000)
 LLM_TIME_BUDGET = _int_env("LLM_TIME_BUDGET", 45) or 45  # секунд на весь ответ вместе с вызовами инструментов
+# Лимиты расхода на одного пользователя (ТЗ §6.5), в токенах (вход + выход); 0 = без лимита. Один ответ модели в прогоне
+# 13.11.2026 — в среднем около 7 200 токенов. Сверх лимита отвечает режим правил с пояснением (§7.5).
+LLM_USER_DAILY_TOKENS = _int_env("LLM_USER_DAILY_TOKENS", 150_000)  # на пользователя в сутки, ≈ 20 ответов модели
+LLM_DIALOG_TOKENS = _int_env("LLM_DIALOG_TOKENS", 60_000)  # на диалог, ≈ 8 ответов модели
+LLM_DIALOG_WINDOW_MIN = _int_env("LLM_DIALOG_WINDOW_MIN", 30) or 30  # диалог — вопросы за последние N минут
 
 # Логи: json (по умолчанию, по строке на запрос) или text для разработки. В логи не попадают адреса и тексты запросов.
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json")

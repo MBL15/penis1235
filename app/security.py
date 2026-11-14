@@ -129,6 +129,68 @@ class LlmBudget:
 llm_budget = LlmBudget()
 
 
+class UserLlmBudget:
+    """Лимиты расхода модели на одного пользователя (ТЗ §6.5): на диалог и на сутки. Расход считается в токенах (вход +
+    выход, включая размышления модели): стоимость в рублях — те же токены по тарифу LLM_PRICE_*, а токены считаются всегда.
+
+    Диалог — всё, что пользователь спросил за последние LLM_DIALOG_WINDOW_MIN минут: историю присылает клиент, поэтому
+    границу диалога определяет сервер, а не она. Пользователь — чат Telegram (в боте и после входа на сайте) или адрес.
+    Хранится в памяти процесса, как и LlmBudget: после перезапуска счёт начинается заново."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._day = date.min
+        self._daily: dict[str, int] = {}
+        self._recent: dict[str, deque[tuple[float, int]]] = defaultdict(deque)
+
+    def _roll(self, now: float) -> None:
+        today = config.now_local().date()
+        if today != self._day:
+            self._day, self._daily = today, {}
+        window = config.LLM_DIALOG_WINDOW_MIN * 60
+        if len(self._recent) > 5000:  # забываем давно ушедших, чтобы словарь не рос бесконечно
+            for stale in [k for k, v in self._recent.items() if not v or now - v[-1][0] > window]:
+                del self._recent[stale]
+
+    def _dialog_tokens(self, key: str, now: float) -> int:
+        recent = self._recent.get(key)
+        if not recent:
+            return 0
+        while recent and now - recent[0][0] > config.LLM_DIALOG_WINDOW_MIN * 60:
+            recent.popleft()
+        return sum(tokens for _, tokens in recent)
+
+    def exceeded(self, key: str | None) -> str | None:
+        """'user_daily' или 'dialog', если лимит исчерпан; None — модель можно звать."""
+        if not key:
+            return None
+        now = time.monotonic()
+        with self._lock:
+            self._roll(now)
+            if config.LLM_USER_DAILY_TOKENS and self._daily.get(key, 0) >= config.LLM_USER_DAILY_TOKENS:
+                return "user_daily"
+            if config.LLM_DIALOG_TOKENS and self._dialog_tokens(key, now) >= config.LLM_DIALOG_TOKENS:
+                return "dialog"
+        return None
+
+    def record(self, key: str | None, tokens: int) -> None:
+        if not key or tokens <= 0:
+            return
+        now = time.monotonic()
+        with self._lock:
+            self._roll(now)
+            self._daily[key] = self._daily.get(key, 0) + tokens
+            self._recent[key].append((now, tokens))
+
+    def reset(self) -> None:
+        with self._lock:
+            self._day, self._daily = date.min, {}
+            self._recent.clear()
+
+
+user_llm_budget = UserLlmBudget()
+
+
 # ---------- заголовки безопасности ----------
 
 # Скрипты только свои и Telegram (мини-приложение); встраивать страницу во фрейм можно только самому Telegram.

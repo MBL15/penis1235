@@ -91,8 +91,32 @@ def test_llm_mode_counts_tokens_and_cost_with_a_fake_client(monkeypatch):
     assert priced[9]["status"] == "ok" and priced[9]["value"].endswith("₽")
 
 
+def _without_agent_guard(monkeypatch):
+    """Проверки прогона должны ловить выдумку сами, даже если защита агента (agent._checked) её пропустила."""
+    from app import agent
+
+    monkeypatch.setattr(agent, "ungrounded_numbers", lambda *a, **k: [])
+    monkeypatch.setattr(agent, "ungrounded_titles", lambda *a, **k: [])
+
+
+def test_agent_never_shows_an_invented_event():
+    """ТЗ §7.1: выдуманное событие в ответе модели до пользователя не доходит, отвечает режим правил."""
+    liar = final("Рекомендую «Рок-опера Тень» в Стерлитамаке в 21:45, билеты 7777 ₽.", [])
+
+    class Liar(FakeGemini):
+        def generate_content(self, **kwargs):
+            self.calls.append(kwargs)
+            return liar
+
+    (outcome,) = run.run_queries(build_session(), [q for q in run.load_queries() if q["id"] == "n05"], mode="llm", client=Liar())
+    assert outcome.invented == [] and outcome.unsupported == 0
+    assert "Рок-опера" not in outcome.last.reply and outcome.last.mode == "rules"
+    assert "ungrounded_titles" in outcome.last.trace.flags
+
+
 def test_model_answers_are_judged_by_the_same_checks(monkeypatch):
     """Модель выдумала событие и пообещала то, чего нет в базе: прогон должен это поймать."""
+    _without_agent_guard(monkeypatch)
     liar = final("Рекомендую «Рок-опера Тень» в Стерлитамаке в 21:45, билеты 7777 ₽.", [])
     queries = [q for q in run.load_queries() if q["id"] == "n05"]
 
@@ -108,8 +132,10 @@ def test_model_answers_are_judged_by_the_same_checks(monkeypatch):
     assert metrics[2]["status"] == "fail" and metrics[1]["status"] == "fail"
 
 
-def test_quoted_venue_name_is_not_an_invented_event():
+def test_quoted_venue_name_is_not_an_invented_event(monkeypatch):
     from app.models import Event
+
+    _without_agent_guard(monkeypatch)
 
     session = build_session()
     venue = next(v for (v,) in session.query(Event.venue).distinct() if "«" in (v or ""))
