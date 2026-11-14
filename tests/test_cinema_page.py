@@ -76,6 +76,8 @@ def test_cinema_page_escapes_titles_and_venues(client, add):
     assert "<script>alert(1)" not in text and "&lt;script&gt;" in text and "Кино <b>" not in text
 
 
-def test_cinema_link_is_in_the_shared_header_and_home_menu(client):
-    assert 'href="/cinema"' in client.get("/plan").text
-    assert 'href="/cinema"' in client.get("/").text
+def test_cinema_tab_is_not_in_the_header_but_page_still_opens(client):
+    # вкладку «Кино» убрали из верхнего меню (14.11.2026); страница живёт по прямой ссылке
+    assert 'href="/cinema"' not in client.get("/plan").text
+    assert 'href="/cinema"' not in client.get("/").text
+    assert client.get("/cinema").status_code == 200

@@ -71,8 +71,7 @@ def _layout(title: str, description: str, body: str, *, path: str = "", image: s
 <body class="min-h-screen bg-art bg-[#eef2fb] bg-fixed text-ink antialiased">
   <header class="mx-auto flex {width} items-center justify-between gap-3 px-4 pt-4">
     <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-white">← К афише</a>
-    <nav class="flex items-center gap-1"><a href="/cinema" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink">Кино</a>
-    <a href="/account" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink">Кабинет</a>
+    <nav class="flex items-center gap-1"><a href="/account" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink">Кабинет</a>
     <a href="/docs" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink w600:hidden">API</a></nav>
   </header>
   <main class="mx-auto {width} px-4 pb-12 pt-5">
