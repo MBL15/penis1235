@@ -99,6 +99,18 @@ copy .env.example .env                       # при желании впиши�
 
 Тесты: `pip install -r requirements-dev.txt`, затем `python -m pytest` (651 тест, около 45 секунд; в сеть и к платной модели не ходят).
 
+### MCP-сервер
+
+`python -m app.mcp_server` отдаёт инструменты афиши внешним ИИ-клиентам (Claude Desktop, Claude Code, IDE) по протоколу
+Model Context Protocol через stdio. Только чтение: `search_events`, `get_event`, `find_similar`, `get_venue_schedule`
+(те же, что у агента), `list_facets` (города и категории) и `plan_day` (планировщик «Выходной день»). Подписки и обращения
+не вынесены: они меняют данные и требуют подтверждения человеком. База та же, что у сервиса (`DATABASE_URL` или `afisha.db`).
+Подключение клиента (путь к Python из своего окружения):
+
+```json
+{"mcpServers": {"afisha": {"command": "python", "args": ["-m", "app.mcp_server"], "cwd": "/путь/к/репозиторию"}}}
+```
+
 Стили фронтенда собирает Tailwind CSS (нужен Node, только разработчику): `npm install`, затем `npm run build:css`. Готовый `app/static/tailwind.css` лежит в репозитории, поэтому на сервере сборка не нужна.
 
 ## Подписки на новые события (бот)
