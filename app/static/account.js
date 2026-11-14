@@ -77,7 +77,7 @@
       const ready = () => (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
       if (ready()) return resolve(ready());
       const script = document.createElement('script');
-      script.src = 'https://telegram.org/js/telegram-web-app.js';
+      script.src = '/static/telegram-web-app.js';
       script.onload = () => resolve(ready());
       script.onerror = () => resolve('');
       document.head.appendChild(script);

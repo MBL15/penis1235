@@ -433,6 +433,9 @@
   $('#sheet-backdrop').addEventListener('click', closeSheet);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheetOpen()) closeSheet(); });
   const haptic = () => { if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged(); };
+  // Не ждём window.load: он ждёт все картинки и сторонние файлы, и при медленной сети мини-приложение вечно висит на заставке Telegram.
+  // Скрипт Telegram (defer) отрабатывает до DOMContentLoaded; load оставлен запасным путём.
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initTelegram); else initTelegram();
   window.addEventListener('load', initTelegram);
 
   // ---------- Чат-помощник с историей диалогов ----------
