@@ -84,6 +84,12 @@
   background: var(--tile-fg); opacity: .85;
   -webkit-mask: var(--folk-stitch) center / auto 100% repeat-x; mask: var(--folk-stitch) center / auto 100% repeat-x;
 }
+/* Без фото крупная карточка не выглядит пустой: едва заметный узор кошмы цветом категории (под значком, не под текстом) */
+#results article > div:first-child:not(:has(img))::before {
+  content: ""; position: absolute; inset: 0 0 14px; pointer-events: none;
+  background: var(--tile-fg); opacity: .09;
+  -webkit-mask: var(--folk-star) center / 44px 44px repeat; mask: var(--folk-star) center / 44px 44px repeat;
+}
 /* на фотографии кайма лежит на полоске цвета плитки, чтобы читаться на любом снимке */
 #results article > div:first-child:has(img)::before {
   content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 16px; z-index: 1; pointer-events: none; background: var(--tile-bg);
