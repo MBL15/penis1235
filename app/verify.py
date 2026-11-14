@@ -317,6 +317,9 @@ def verify_events(session: Session, events, *, links: bool = True, now: datetime
         changes = audit.diff(before, audit.snapshot(event))
         if "publication" in changes:
             audit.record(session, actor, "publication", event.id, changes)
+        # Коммит после каждой карточки: иначе транзакция записи держалась бы всю проверку вместе с запросами к сайтам и паузами
+        # (минуты), и сайт с ботом в это время получали бы «database is locked» на любую запись (трассы, обращения, диалоги).
+        session.commit()
     session.commit()
     return report
 

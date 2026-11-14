@@ -218,3 +218,24 @@ def test_sync_puts_new_events_in_the_queue_and_verification_publishes_the_good_o
     assert [e.title for e in search(session, SearchFilters(), NOW)[0]] == ["Концерт «Вечер»"]
     waiting = session.query(Event).filter(Event.publication == "draft").one()
     assert waiting.title == "Событие с битой ссылкой" and "ссылка не открывается" in waiting.review_reason
+
+
+def test_verification_does_not_hold_the_write_lock_during_link_checks(session, add, monkeypatch):
+    """Проверка ссылок идёт минутами: транзакция записи не должна быть открыта, пока ждём ответа сайта (иначе сайт и бот
+    получают «database is locked»). К моменту следующего запроса изменения прошлой карточки уже зафиксированы."""
+    from datetime import datetime
+
+    from app import verify
+    from app.verify import LinkResult
+
+    first, _ = add("Концерт один", datetime(2030, 1, 10, 19, 0), url="https://example.org/1")
+    second, _ = add("Концерт два", datetime(2030, 1, 11, 19, 0), url="https://example.org/2")
+    open_tx = []
+
+    def check(url, **kw):
+        open_tx.append(session.in_transaction() and bool(session.dirty or session.new))
+        return LinkResult("ok", 200)
+
+    monkeypatch.setattr(verify, "check_link", check)
+    verify.verify_events(session, [first, second], links=True, pause=0, sleep=lambda s: None)
+    assert open_tx == [False, False]
