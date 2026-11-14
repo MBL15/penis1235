@@ -1,5 +1,6 @@
 """Кино на Афише (afisha.ru): список кинотеатров, расписание сеансов, обход по дням. Страницы в tests/fixtures: реальная
 структура данных сайта (`window.__nrp ... ['root'] = {...}`), сокращённая до нескольких кинотеатров и двух фильмов."""
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -12,6 +13,8 @@ FIX = Path(__file__).parent / "fixtures"
 LIST_HTML = (FIX / "afisha_cinema_list.html").read_text(encoding="utf-8")
 SCHEDULE_HTML = (FIX / "afisha_cinema_schedule.html").read_text(encoding="utf-8")
 NOW = datetime(2026, 11, 13, 12, 0)
+# JSON-ответ сайта на запрос следующей страницы (Accept: application/json): сама модель страницы, без обёртки window.__nrp
+SCHEDULE_JSON = json.dumps(afisha_cinema.page_model(SCHEDULE_HTML), ensure_ascii=False)
 
 
 def test_cinema_list_is_parsed_from_the_page_model():
@@ -21,6 +24,21 @@ def test_cinema_list_is_parsed_from_the_page_model():
     assert first["name"] == "Синема Парк Семья" and first["id"] == 3479
     assert first["schedule_url"] == "/ufa/cinema/sinema-park-semya-3479/movie/"
     assert first["address"].startswith("просп. Октября") and 54 < first["lat"] < 55 and 55 < first["lon"] < 57
+
+
+def test_cinema_of_a_neighbouring_town_gets_its_own_city():
+    neighbour = {"id": 1, "name": "Арсенал (Нефтекамск)", "address": "Нефтекамск, Юбилейный просп., 18", "lat": None, "lon": None,
+                 "schedule_url": "/neftekamsk/cinema/arsenal-1/movie/", "city": "Нефтекамск"}
+    records, _ = afisha_cinema.parse_schedule(SCHEDULE_HTML, neighbour, city="Уфа", page_url="https://www.afisha.ru/x/", now=NOW)
+    assert records and all(r["city"] == "Нефтекамск" and r["address"] == "Нефтекамск, Юбилейный просп., 18" for r in records)
+    assert all(c["city"] for c in afisha_cinema.parse_cinemas(LIST_HTML))
+
+
+def test_json_response_is_the_same_model_as_the_html_page():
+    assert afisha_cinema.page_model(SCHEDULE_JSON) == afisha_cinema.page_model(SCHEDULE_HTML)
+    records, more = afisha_cinema.parse_schedule(SCHEDULE_JSON, afisha_cinema.parse_cinemas(LIST_HTML)[0], city="Уфа",
+                                                 page_url="https://www.afisha.ru/x/?date=2026-11-13--2026-11-13&page=2&pageSize=6", now=NOW)
+    assert records and more  # у JSON-страницы тот же счётчик страниц; следующие страницы обходит fetch_records по первой странице
 
 
 def test_page_without_model_is_a_source_error_not_a_crash():
@@ -49,8 +67,8 @@ def test_one_record_per_film_with_facts_only_from_the_page():
     assert record["address"].startswith("Уфа, просп. Октября") and record["source"] == "afisha.ru"
     assert "Сеансы 13.11: 23:40" in record["description"] and "Длительность: 2 часа 20 минут" in record["description"]
     assert record["image_url"].startswith("https://") and record["lat"] and record["lon"]
-    # вторая страница расписания берётся из ссылок самого сайта
-    assert more == ["https://www.afisha.ru/ufa/cinema/sinema-park-semya-3479/movie/?page=2"]
+    # вторая страница расписания — JSON той же страницы с параметрами дня и страницы (адреса /pageN сайт не обслуживает)
+    assert more == ["https://www.afisha.ru/ufa/cinema/sinema-park-semya-3479/movie/?date=2026-11-13--2026-11-13&page=2&pageSize=6"]
 
 
 def test_url_is_unique_per_cinema_and_day_so_dedup_does_not_merge_different_screenings():
@@ -72,10 +90,11 @@ class FakeFetcher:
     """Подмена Fetcher: адрес → страница; запоминает, куда ходили."""
 
     def __init__(self, pages: dict):
-        self.pages, self.calls = pages, []
+        self.pages, self.calls, self.accepts = pages, [], {}
 
-    def get(self, url, **_):
+    def get(self, url, accept="", **_):
         self.calls.append(url)
+        self.accepts[url] = accept
         page = self.pages.get(url)
         if isinstance(page, Exception):
             raise page
@@ -88,12 +107,17 @@ def test_fetch_walks_cities_cinemas_days_and_pages():
     base = "https://www.afisha.ru"
     pages = {f"{base}/ufa/cinema/cinema_list/": LIST_HTML,
              f"{base}/ufa/cinema/sinema-park-semya-3479/movie/": SCHEDULE_HTML,
-             f"{base}/ufa/cinema/sinema-park-semya-3479/movie/14-11-2026": SCHEDULE_HTML}
+             f"{base}/ufa/cinema/sinema-park-semya-3479/movie/?date=14-11-2026": SCHEDULE_HTML,
+             f"{base}/ufa/cinema/sinema-park-semya-3479/movie/?date=2026-11-13--2026-11-13&page=2&pageSize=6": SCHEDULE_JSON,
+             f"{base}/ufa/cinema/sinema-park-semya-3479/movie/?date=2026-11-14--2026-11-14&page=2&pageSize=6": SCHEDULE_JSON}
     fetcher = FakeFetcher(pages)
     records = list(afisha_cinema.fetch_records(days=2, fetcher=fetcher, now=NOW))
     assert records and all(r["category"] == "cinema" for r in records)
-    assert f"{base}/ufa/cinema/sinema-park-semya-3479/movie/14-11-2026" in fetcher.calls  # второй день
-    assert f"{base}/ufa/cinema/sinema-park-semya-3479/movie/?page=2" in fetcher.calls  # страница расписания из пагинации
+    # день задаётся параметром ?date= (адрес /movie/ДД-ММ-ГГГГ сайт игнорирует); следующие страницы — JSON той же страницы
+    assert f"{base}/ufa/cinema/sinema-park-semya-3479/movie/?date=14-11-2026" in fetcher.calls
+    assert f"{base}/ufa/cinema/sinema-park-semya-3479/movie/?date=2026-11-14--2026-11-14&page=2&pageSize=6" in fetcher.calls
+    assert fetcher.accepts[f"{base}/ufa/cinema/sinema-park-semya-3479/movie/?date=2026-11-14--2026-11-14&page=2&pageSize=6"] == "application/json"
+    assert not any("/page2" in call for call in fetcher.calls)
     # страницы, которых нет (другие кинотеатры в подмене), не обрывают обход
     assert len(fetcher.calls) > 4
 

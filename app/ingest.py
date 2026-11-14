@@ -162,7 +162,8 @@ def upsert_detailed(session: Session, data: EventIn, *, actor: str = "system") -
     language = canonical_language(data.language) or detect_language(f"{data.title}\n{data.description}")
 
     existing = find_duplicate(
-        session, city=city, start_at=data.start_at, title=data.title, venue=data.venue, url=data.url
+        session, city=city, start_at=data.start_at, title=data.title, venue=data.venue, url=data.url,
+        category=category,
     )
     if existing is None:
         event = Event(

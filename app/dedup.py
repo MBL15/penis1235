@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from .models import Event
 from .normalize import STATUS_SEVERITY, norm_text, title_key
+from .venues import venue_key_for
 
 SIMILARITY_THRESHOLD = 0.82
 STRICT_THRESHOLD = 0.95  # когда площадки явно разные, нужно почти полное совпадение названий
@@ -53,8 +54,15 @@ def _venues_conflict(a: str, b: str) -> bool:
     return SequenceMatcher(None, na, nb).ratio() < 0.4 and not (set(na.split()) & set(nb.split()))
 
 
+def _same_cinema_slot(candidate: Event, venue: str) -> bool:
+    """Кино: один фильм одновременно идёт в разных кинотеатрах — это разные события; склеиваются только записи одного кинотеатра."""
+    if candidate.category != "cinema":
+        return False
+    return bool(venue) and (candidate.venue_key or venue_key_for(candidate.venue)) == venue_key_for(venue)
+
+
 def find_duplicate(
-    session: Session, *, city: str, start_at: datetime, title: str, venue: str = "", url: str = ""
+    session: Session, *, city: str, start_at: datetime, title: str, venue: str = "", url: str = "", category: str = ""
 ) -> Event | None:
     if url:
         same_url = session.scalar(select(Event).where(Event.url == url))
@@ -73,6 +81,8 @@ def find_duplicate(
     key = title_key(title)
     best: tuple[float, Event] | None = None
     for candidate in candidates:
+        if category == "cinema" and not _same_cinema_slot(candidate, venue):
+            continue
         if not _time_close(candidate.start_at, start_at):
             continue
         score = similarity(key, title_key(candidate.title))

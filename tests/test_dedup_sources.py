@@ -113,3 +113,11 @@ def test_numbered_titles_are_never_reported(session, a, b):
     raw(session, a, "culture.ru")
     raw(session, b, "kassir.ru")
     assert find_pairs(session) == []
+
+
+def test_one_film_at_the_same_time_in_different_cinemas_stays_separate(session):
+    def cinema(venue, cinema_id):
+        return record("Чудо-юдо", "afisha.ru", start=datetime(2026, 11, 14, 17, 0), venue=venue, category="cinema",
+                      url=f"https://www.afisha.ru/movie/chudo-yudo-1000790/#kino-{cinema_id}-20261114")
+    sync_records(session, [cinema("Киномакс-Neo Уфа", 1), cinema("Синема Парк Семья", 2), cinema("Киномакс-Neo Уфа", 1)])
+    assert len(list(session.scalars(select(Event)))) == 2  # два кинотеатра; повтор того же кинотеатра обновляет запись

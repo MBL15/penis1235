@@ -85,11 +85,14 @@ class Fetcher:
         host = (parts.hostname or "").lower()
         return parts.scheme == "https" and any(host == h or host.endswith("." + h) for h in self.allowed_hosts)
 
-    def _read(self, url: str) -> tuple[int, str, str]:
+    def _read(self, url: str, accept: str = "") -> tuple[int, str, str]:
         """Один запрос с повторами. Возвращает (код, текст, итоговый адрес). 404/410 отдаются как есть."""
         if not self.host_ok(url):
             raise SourceError(f"адрес вне списка разрешённых хостов: {url}")
-        request = urllib.request.Request(url, headers={"User-Agent": self.user_agent, "Accept-Language": "ru", "Accept-Encoding": "identity"})
+        headers = {"User-Agent": self.user_agent, "Accept-Language": "ru", "Accept-Encoding": "identity"}
+        if accept:
+            headers["Accept"] = accept
+        request = urllib.request.Request(url, headers=headers)
         last: Exception | None = None
         for attempt in range(self.retries):
             self._pause(url)
@@ -141,11 +144,12 @@ class Fetcher:
 
     # ---- публичный метод ----
 
-    def get(self, url: str, *, robots: bool = True) -> str:
-        """Текст страницы. robots=False только для документированного открытого API (robots.txt относится к обходу страниц)."""
+    def get(self, url: str, *, robots: bool = True, accept: str = "") -> str:
+        """Текст страницы. robots=False только для документированного открытого API (robots.txt относится к обходу страниц).
+        accept — заголовок Accept, когда сайт отдаёт ту же страницу в JSON (так подгружают следующие страницы списков)."""
         if robots and not self.allowed(url):
             raise SourceError(f"robots.txt запрещает обход {url}")
-        status, text, final = self._read(url)
+        status, text, final = self._read(url, accept)
         if status in (404, 410):
             raise SourceError(f"{url}: страницы нет ({status})")
         if re.search(r"captcha|showcaptcha", urllib.parse.urlsplit(final).path + urllib.parse.urlsplit(final).query, re.I) or (

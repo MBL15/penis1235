@@ -35,9 +35,11 @@ BASE = "https://www.afisha.ru"
 # найдены (404): пропускаются, добавить новый можно одной строкой.
 CITY_SLUGS = {"ufa": "Уфа", "sterlitamak": "Стерлитамак", "neftekamsk": "Нефтекамск", "oktyabrskij": "Октябрьский",
               "kumertau": "Кумертау", "birsk": "Бирск", "uchaly": "Учалы"}
-MAX_PAGES = 5  # страниц расписания одного кинотеатра за день (по 6 фильмов): больше в Башкортостане не бывает
+
+MAX_PAGES = 8  # страниц расписания одного кинотеатра за день (по 6 фильмов)
 
 _ROOT = "['root'] = "
+_DATE_PARAM = re.compile(r"[?&]date=(\d{2})-(\d{2})-(\d{4})")
 _HOURS = re.compile(r"(\d+)\s*ч", re.I)
 _MINUTES = re.compile(r"(\d+)\s*мин", re.I)
 
@@ -45,7 +47,15 @@ _MINUTES = re.compile(r"(\d+)\s*мин", re.I)
 # ---------- разбор страницы ----------
 
 def page_model(html: str) -> dict:
-    """JSON-модель страницы из `window.__nrp[...]['root'] = {"model": {...}}`."""
+    """JSON-модель страницы из `window.__nrp[...]['root'] = {"model": {...}}`; JSON-ответ сайта (Accept: application/json) — сама модель."""
+    if html.lstrip().startswith("{"):
+        try:
+            obj = json.loads(html)
+        except ValueError as exc:
+            raise SourceError(f"JSON-ответ не разобрался: {exc}") from exc
+        if not isinstance(obj, dict):
+            raise SourceError("в JSON-ответе нет модели данных")
+        return obj
     start = html.find(_ROOT)
     if start < 0:
         raise SourceError("в странице нет модели данных (разметка сайта изменилась?)")
@@ -70,8 +80,11 @@ def parse_cinemas(html: str) -> list[dict]:
         if not schedule_url:  # у кинотеатра нет расписания фильмов на сайте
             continue
         geo = item.get("GeoPoint") or {}
+        address = clean_text(item.get("Address"), 300)
+        slug = schedule_url.strip("/").split("/")[0]  # в списке города бывают кинотеатры соседних городов: город берём из адреса страницы
         cinemas.append({
-            "id": item.get("ID"), "name": clean_text(item.get("Name"), 200), "address": clean_text(item.get("Address"), 300),
+            "id": item.get("ID"), "name": clean_text(item.get("Name"), 200), "address": address,
+            "city": CITY_SLUGS.get(slug) or (address.split(",")[0].strip() if "," in address else ""),
             "lat": geo.get("Latitude"), "lon": geo.get("Longitude"), "schedule_url": schedule_url,
         })
     return cinemas
@@ -95,13 +108,25 @@ def _price(value) -> int | None:
         return None
 
 
+def _more_pages(pager: dict, cinema: dict, page_url: str, today: date) -> list[str]:
+    """Адреса следующих страниц расписания (по 6 фильмов). HTML отдаёт только первую, остальные сайт подгружает запросом к той же
+    странице с `Accept: application/json` и параметрами `date=ГГГГ-ММ-ДД--ГГГГ-ММ-ДД&page=N&pageSize=6`; адреса `/pageN` не работают."""
+    count, size = pager.get("PagesCount") or 1, pager.get("PageSize") or 6
+    if (pager.get("CurrentPage") or 1) != 1 or not isinstance(count, int) or not isinstance(size, int) or count < 2:
+        return []
+    found = _DATE_PARAM.search(page_url)
+    day = date(int(found.group(3)), int(found.group(2)), int(found.group(1))) if found else today
+    base = BASE + cinema["schedule_url"] if cinema["schedule_url"].startswith("/") else cinema["schedule_url"]
+    return [f"{base}?date={day:%Y-%m-%d}--{day:%Y-%m-%d}&page={n}&pageSize={size}" for n in range(2, min(count, MAX_PAGES) + 1)]
+
+
 def parse_schedule(html: str, cinema: dict, *, city: str, page_url: str, now: datetime | None = None) -> tuple[list[dict], list[str]]:
     """Страница расписания кинотеатра на день → (записи, адреса остальных страниц этого же расписания)."""
     now = now or now_local()
     model = page_model(html)
     widget = (model.get("Schedule") or {}).get("MovieWidget") or {}
-    more = [BASE + link["Url"] for link in ((widget.get("Pager") or {}).get("PageLinks") or [])
-            if link.get("Url") and not link.get("Selected") and str(link["Url"]).startswith("/")]
+    more = _more_pages(widget.get("Pager") or {}, cinema, page_url, now.date())
+    city = cinema.get("city") or city
     records = []
     for item in widget.get("Items") or []:
         movie = item.get("Movie") or {}
@@ -140,7 +165,8 @@ def parse_schedule(html: str, cinema: dict, *, city: str, page_url: str, now: da
             "category": "cinema",
             "city": city,
             "venue": cinema["name"],
-            "address": f"{city}, {cinema['address']}" if cinema.get("address") else "",
+            "address": (cinema["address"] if cinema["address"].lower().startswith(city.lower()) else f"{city}, {cinema['address']}")
+            if cinema.get("address") else "",
             "price_min": min(prices) if prices else None,
             "price_max": max(prices) if prices else None,
             "url": f"{film_url}#kino-{cinema['id']}-{first:%Y%m%d}",
@@ -162,8 +188,10 @@ def parse_schedule(html: str, cinema: dict, *, city: str, page_url: str, now: da
 # ---------- обход ----------
 
 def _day_url(schedule_url: str, day: date, today: date) -> str:
-    base = BASE + schedule_url if schedule_url.startswith("/") else schedule_url
-    return base if day == today else base.rstrip("/") + f"/{day:%d-%m-%Y}"
+    """Адрес расписания на день. Сайт понимает день только в параметре `?date=ДД-ММ-ГГГГ`: адрес вида `/movie/ДД-ММ-ГГГГ`,
+    который он сам же показывает в календаре, отдаёт расписание на сегодня;."""
+    base = (BASE + schedule_url if schedule_url.startswith("/") else schedule_url).rstrip("/") + "/"
+    return base if day == today else f"{base}?date={day:%d-%m-%Y}"
 
 
 def fetch_records(
@@ -189,19 +217,21 @@ def fetch_records(
         log.info("Афиша (кино): %s, кинотеатров %d", city, len(cinemas))
         for cinema in cinemas:
             for offset in range(max(1, days)):
-                queue = [_day_url(cinema["schedule_url"], today + timedelta(days=offset), today)]
-                seen = set()
-                while queue and len(seen) < MAX_PAGES:
-                    url = queue.pop(0)
-                    if url in seen:
-                        continue
-                    seen.add(url)
+                url = _day_url(cinema["schedule_url"], today + timedelta(days=offset), today)
+                try:
+                    records, more = parse_schedule(fetcher.get(url), cinema, city=city, page_url=url, now=now)
+                except BlockedError:
+                    raise
+                except SourceError as exc:
+                    log.warning("Афиша (кино): %s", exc)  # одна страница не открылась: идём дальше
+                    continue
+                yield from records
+                for more_url in more:  # остальные страницы дня (по 6 фильмов) — JSON той же страницы
                     try:
-                        records, more = parse_schedule(fetcher.get(url), cinema, city=city, page_url=url, now=now)
+                        extra, _ = parse_schedule(fetcher.get(more_url, accept="application/json"), cinema, city=city, page_url=more_url, now=now)
                     except BlockedError:
                         raise
                     except SourceError as exc:
-                        log.warning("Афиша (кино): %s", exc)  # одна страница не открылась: идём дальше
+                        log.warning("Афиша (кино): %s", exc)
                         continue
-                    yield from records
-                    queue.extend(u for u in more if u not in seen)
+                    yield from extra
