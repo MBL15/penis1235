@@ -92,7 +92,8 @@ def issue_token(now: float | None = None) -> str:
 def check_token(token: str, now: float | None = None) -> str | None:
     """None, если метка в порядке; иначе причина отказа по-русски."""
     issued_text, _, signature = (token or "").partition(".")
-    if not issued_text.isdigit() or not hmac.compare_digest(_sign(int(issued_text)).partition(".")[2], signature):
+    valid_number = issued_text.isascii() and issued_text.isdigit() and len(issued_text) <= 12  # «²».isdigit() тоже истинно
+    if not valid_number or not hmac.compare_digest(_sign(int(issued_text)).partition(".")[2], signature):
         return "Страница формы устарела. Обновите её и отправьте обращение ещё раз"
     age = (now if now is not None else time.time()) - int(issued_text)
     if age < MIN_SECONDS:

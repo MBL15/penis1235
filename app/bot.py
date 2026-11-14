@@ -413,14 +413,16 @@ PLAN_HELP = (
     "<b>Выходной день</b>: соберу 2–4 события без пересечений, с дорогой и общей стоимостью.\n"
     "Напишите после команды условия, например:\n"
     "<i>/plan 2000 рублей на двоих, суббота, Уфа, ребёнок 8 лет, с 12 до 20, дорога до 30 минут</i>\n"
-    "Что не названо, берётся по умолчанию: ближайшая суббота, 10:00–22:00, дорога до 40 минут, 3 события."
+    "Что не названо, берётся по умолчанию: ближайшая суббота (в субботу до 18:00 — сегодня), 10:00–22:00, дорога до 40 минут, "
+    "3 события."
 )
 
 
 def plan_view(session: Session, text: str, city: str | None) -> View:
     from .planner import plan_weekend, render_plan_text, request_from_text
 
-    result = plan_weekend(session, request_from_text(text, now_local().date(), default_city=city))
+    now = now_local()
+    result = plan_weekend(session, request_from_text(text, now.date(), default_city=city, now=now), now)
     kb = InlineKeyboardBuilder()
     for number, item in enumerate(result.items, 1):
         kb.button(text=f"{number}. {item.event.title[:28]}", callback_data=f"e:{item.event.id}")

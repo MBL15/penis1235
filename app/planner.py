@@ -26,6 +26,18 @@ MAX_CANDIDATES = 60
 DEFAULT_DURATION = {"exhibition": 60, "excursion": 90, "theatre": 150, "concert": 120, "kids": 60}
 FALLBACK_DURATION = 90
 WINDOW_ALL = (time(0, 0), time(23, 59))
+# В субботу до этого часа «ближайшая суббота» — сегодня: на 2–3 события ещё хватает дня. Позже план строится на следующую.
+SAME_DAY_UNTIL = time(18, 0)
+
+
+def default_day(now: datetime) -> date:
+    """День плана, если человек его не назвал: ближайшая суббота. Сегодняшняя, если сегодня суббота и ещё не вечер, — так же,
+    как «суббота», сказанная в субботу (rules.parse_query), означает сегодня. Раньше без даты в субботу предлагалась
+    следующая неделя, а со словом «суббота» — сегодня."""
+    today = now.date()
+    if today.weekday() == 5 and now.time() < SAME_DAY_UNTIL:
+        return today
+    return today + timedelta(days=(5 - today.weekday()) % 7 or 7)
 
 
 @dataclass
@@ -176,8 +188,9 @@ def _candidates(session: Session, req: PlanRequest, now: datetime) -> list[_Slot
         f.kids = None
     events, _ = search(session, f, now)
     # Только события, которые начинаются в этот день: у выставок и экскурсий «на период» часы работы неизвестны, поставить их
-    # в расписание на конкретное время нельзя.
-    slots = [s for s in (_slot(e, req.people) for e in events if e.start_at.date() == req.day) if s is not None]
+    # в расписание на конкретное время нельзя. План на сегодня не включает уже начавшиеся: поиск их ещё отдаёт (идёт час после
+    # начала), но успеть к началу уже нельзя.
+    slots = [s for s in (_slot(e, req.people) for e in events if e.start_at.date() == req.day) if s is not None and s.start >= now]
     slots.sort(key=lambda s: (-s.score, s.start))
     return slots[:MAX_CANDIDATES]
 
@@ -270,23 +283,25 @@ def parse_budget_text(text: str) -> tuple[int | None, int | None]:
     from .rules import PEOPLE
 
     low = (text or "").lower().replace("ё", "е")
-    money = re.search(r"(\d[\d\s]{1,6})\s*(?:₽|руб\w*|р\b)", low)
+    # Пробел внутри суммы допустим только как разделитель тысяч («2 000»): иначе «с 12 до 20 2000 рублей» склеивалось в 202000
+    money = re.search(r"(?<!\d)(\d{1,3}(?:[  ]\d{3})+|\d+)\s*(?:₽|руб\w*|р\b)", low)
     people = next((n for word, n in PEOPLE.items() if word in low), None)
-    return (int(money.group(1).replace(" ", "")) if money else None), people
+    return (int(re.sub(r"\D", "", money.group(1))) if money else None), people
 
 
-def request_from_text(text: str, today: date, *, default_city: str | None = None) -> PlanRequest:
+def request_from_text(text: str, today: date, *, default_city: str | None = None, now: datetime | None = None) -> PlanRequest:
     """Команда /plan в боте: «2000 на двоих, суббота, Уфа, с ребёнком 8 лет, с 12 до 20, дорога до 30 минут, 3 события».
 
     Дату, город, время и возраст разбирает rules.py (тот же разбор, что у запасного режима поиска), бюджет и состав, время в пути и
-    число событий разбираются здесь. Неназванное берётся по умолчанию: ближайшая суббота, окно 10:00–22:00, дорога до 40 минут."""
+    число событий разбираются здесь. Неназванное берётся по умолчанию: ближайшая суббота (default_day), окно 10:00–22:00,
+    дорога до 40 минут. now — текущее время для выбора дня по умолчанию; без него считается начало дня today."""
     import re
 
     from .rules import parse_query
 
     parsed = parse_query(text or "", today)
     f = parsed.filters
-    day = f.date_from or today + timedelta(days=(5 - today.weekday()) % 7 or 7)
+    day = f.date_from or default_day(now or datetime.combine(today, time.min))
     budget, people = parse_budget_text(text)
     children = [f.age] if f.age is not None else []
     adults = max(1, people - len(children)) if people else (2 if children else 1)

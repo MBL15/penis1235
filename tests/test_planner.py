@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta
 import pytest
 
 from app.config import now_local
+from app.formatting import MONTHS_GEN
 from app.planner import PlanRequest, parse_budget_text, plan_weekend, travel_minutes
 
 TODAY = now_local().date()
@@ -169,7 +170,8 @@ def test_plan_command_text_is_parsed_and_rendered(session, add):
 
     put(add, "Детский спектакль", at(12), age=0, price=300, venue="Кукольный", category="kids")
     put(add, "Мастер-класс", at(16), age=6, price=200, venue="Центр", category="kids")
-    view = bot.plan_view(session, "суббота Уфа ребёнок 8 лет 2 события", None)
+    # День называем датой: «суббота», сказанная в субботу, — это сегодня, а DAY — следующая суббота (тест падал по субботам)
+    view = bot.plan_view(session, f"{DAY.day} {MONTHS_GEN[DAY.month - 1]} Уфа ребёнок 8 лет 2 события", None)
     assert "Детский спектакль" in view.text and "Итого: 1000 ₽" not in view.text and "Итого" in view.text
     assert [b.callback_data for row in view.markup.inline_keyboard for b in row][:2] != []
     assert "<script>" not in render_plan_text(plan_weekend(session, req), html=True)

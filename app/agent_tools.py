@@ -148,6 +148,18 @@ def int_or_none(value) -> int | None:
         return None
 
 
+MAX_ID = 2**31 - 1
+
+
+def event_id_arg(value) -> int:
+    """Номер события из аргументов модели. Вне диапазона INTEGER SQLite падает с OverflowError, и весь ответ модели
+    срывался бы в запасной режим; так модель получает понятную ошибку инструмента."""
+    number = int_or_none(value)
+    if number is None or not 1 <= number <= MAX_ID:
+        raise ValueError(f"Неверный номер события: {str(value)[:20]}")
+    return number
+
+
 def _day(value) -> date | None:
     return date.fromisoformat(str(value)) if value else None
 
@@ -163,7 +175,8 @@ def _clock(value) -> time | None:
 def filters_from_tool_input(inp: dict) -> SearchFilters:
     limit = int_or_none(inp.get("limit")) or SEARCH_LIMIT_DEFAULT
     status = str(inp.get("status") or "")
-    ids = [i for i in (int_or_none(v) for v in (inp.get("exclude_ids") or [])[:30]) if i is not None] if isinstance(inp.get("exclude_ids"), list) else []
+    raw_ids = inp.get("exclude_ids") if isinstance(inp.get("exclude_ids"), list) else []
+    ids = [i for i in (int_or_none(v) for v in raw_ids[:30]) if i is not None and 1 <= i <= MAX_ID]
     return SearchFilters(
         q=str(inp.get("query") or "")[:200] or None,
         city=str(inp.get("city") or "")[:64] or None,
@@ -263,7 +276,7 @@ def _dispatch(ctx: ToolContext, name: str, args: dict) -> tuple[dict, list[Event
         return _listing(ctx, events, total), events, total
 
     if name == "get_event":
-        event = get_event(session, int(args["id"]))
+        event = get_event(session, event_id_arg(args["id"]))
         if event is None:
             raise ValueError(f"Событие {args['id']} не найдено")
         data, suspicious = event_for_tool(event, full=True)
@@ -272,7 +285,7 @@ def _dispatch(ctx: ToolContext, name: str, args: dict) -> tuple[dict, list[Event
         return data, [event], 1
 
     if name == "find_similar":
-        event = get_event(session, int(args["event_id"]))
+        event = get_event(session, event_id_arg(args["event_id"]))
         if event is None:
             raise ValueError(f"Событие {args['event_id']} не найдено")
         limit = max(1, min(int_or_none(args.get("limit")) or 5, 10))
@@ -321,7 +334,7 @@ def _dispatch(ctx: ToolContext, name: str, args: dict) -> tuple[dict, list[Event
         if kind not in KINDS:
             kind = "other"
         event_id = int_or_none(args.get("event_id"))
-        if event_id is not None and get_event(session, event_id) is None:
+        if event_id is not None and (not 1 <= event_id <= MAX_ID or get_event(session, event_id) is None):
             raise ValueError(f"Событие {event_id} не найдено")
         action = agent_actions.propose(session, "feedback", {"kind": kind, "event_id": event_id, "message": text},
                                        agent_actions.summary_feedback(kind, event_id, text), trace_id=ctx.trace.id, now=now)

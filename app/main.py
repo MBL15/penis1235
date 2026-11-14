@@ -126,7 +126,9 @@ def index() -> FileResponse:
 def event_page(request: Request, event_id: str, session: SessionDep, user: accounts.OptionalUser) -> Response:
     """Карточка события с постоянной ссылкой. Отменённое событие открывается с явной пометкой, черновик и неверный номер дают 404.
     Если вошёл человек, согласившийся вести историю, открытие карточки попадает в «Мои посещения». Страница от входа не зависит."""
-    event = get_event(session, int(event_id)) if event_id.isdigit() and len(event_id) <= 10 and int(event_id) < 2**31 else None
+    # isascii: «²».isdigit() тоже истинно, а int("²") падает — такой адрес должен давать 404, а не 500
+    valid = event_id.isascii() and event_id.isdigit() and len(event_id) <= 10 and int(event_id) < 2**31
+    event = get_event(session, int(event_id)) if valid else None
     if event is None:
         return cached_html(request, render_not_found_page(), max_age=0, status_code=404)
     if user is not None:

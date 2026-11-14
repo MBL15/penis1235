@@ -76,14 +76,18 @@ def confirm(session: Session, action_id: str, *, chat_id: int | None = None, now
         subs = subscriptions.list_for(session, int(chat_id))
         if not subs:
             return False, "У вас нет подписок, переносить нечего. Оформить новую: /subscribe."
-        seen: set[tuple[str, str]] = set()
-        for sub in subs:
-            key = (payload["city"], sub.category)
-            if key in seen:
-                session.delete(sub)  # после переноса две подписки совпали: оставляем одну
-                continue
-            seen.add(key)
-            sub.city = payload["city"]
+        city = payload["city"]
+        # После переноса подписки одной категории совпадут: оставляем одну, лучше ту, что уже в нужном городе. Лишние удаляются
+        # и сбрасываются в базу до переименования остальных: иначе UPDATE упирается в уникальный ключ (чат, город, категория).
+        keep: dict[str, Subscription] = {}
+        for sub in sorted(subs, key=lambda s: (s.city != city, s.id)):
+            if sub.category in keep:
+                session.delete(sub)
+            else:
+                keep[sub.category] = sub
+        session.flush()
+        for sub in keep.values():
+            sub.city = city
         session.commit()
         message, ok = f"Подписки перенесены в: {payload['city'] or 'вся республика'}.", True
     else:  # feedback

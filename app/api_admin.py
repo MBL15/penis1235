@@ -167,7 +167,7 @@ def admin_traces(
 @router.get("/feedback", response_model=list[FeedbackOut], summary="Обращения через форму обратной связи")
 def feedback_inbox(
     session: SessionDep,
-    status: Annotated[str, Query(pattern="^(all|new|processed)$")] = "new",
+    status: Annotated[str, Query(pattern="^(all|new|in_progress|processed)$")] = "new",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[FeedbackOut]:
     return list_feedback(session, status=status, limit=limit)

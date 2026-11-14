@@ -46,15 +46,17 @@ def sync_records(session, records, *, actor: str = "sync", queue: bool = False) 
 
 
 def producers(args) -> dict[str, Callable[[], Iterable[dict]]]:
-    cities = {slug.strip(): yandex_afisha.CITY_SLUGS[slug.strip()] for slug in args.cities.split(",") if slug.strip() in yandex_afisha.CITY_SLUGS}
+    slugs = [s.strip() for s in args.cities.split(",") if s.strip()]  # «ufa, sterlitamak»: пробелы после запятой не теряют город
+
+    def pick(known: dict[str, str]) -> dict[str, str] | None:
+        return {s: known[s] for s in slugs if s in known} or None
+
     return {
         "culture-ru": lambda: culture_ru.fetch_records(args.pages, args.delay),
-        "yandex-afisha": lambda: yandex_afisha.fetch_records(args.limit, cities=cities or None),
-        "kassir": lambda: kassir.fetch_records(cities={s: kassir.CITIES[s] for s in args.cities.split(",") if s in kassir.CITIES} or None),
-        "kudago": lambda: kudago.fetch_records(locations={s: kudago.LOCATIONS[s] for s in args.cities.split(",") if s in kudago.LOCATIONS} or None),
-        "afisha-cinema": lambda: afisha_cinema.fetch_records(
-            cities={s.strip(): afisha_cinema.CITY_SLUGS[s.strip()] for s in args.cities.split(",") if s.strip() in afisha_cinema.CITY_SLUGS} or None,
-            days=getattr(args, "days", 3)),
+        "yandex-afisha": lambda: yandex_afisha.fetch_records(args.limit, cities=pick(yandex_afisha.CITY_SLUGS)),
+        "kassir": lambda: kassir.fetch_records(cities=pick(kassir.CITIES)),
+        "kudago": lambda: kudago.fetch_records(locations=pick(kudago.LOCATIONS)),
+        "afisha-cinema": lambda: afisha_cinema.fetch_records(cities=pick(afisha_cinema.CITY_SLUGS), days=getattr(args, "days", 3)),
         "sites": lambda: sites.fetch_records(),
     }
 

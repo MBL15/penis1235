@@ -1,13 +1,13 @@
 """Страница «Выходной день» (/plan): форма и результат планировщика. Всё на сервере: параметры в адресной строке, результат
 открывается по ссылке и работает без JavaScript."""
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from sqlalchemy.orm import Session
 
 from .config import now_local
 from .normalize import canonical_city
 from .pages import PRIMARY, _layout, esc
-from .planner import PlanRequest, plan_weekend
+from .planner import PlanRequest, default_day, plan_weekend
 from .search import facets
 
 FIELD = ("min-h-[46px] w-full rounded-field border border-line bg-glass-field px-3 text-[1rem] font-medium text-ink tx-field "
@@ -47,8 +47,8 @@ def _field(label: str, name: str, value: str, kind: str = "text", extra: str = "
             f'<input class="{FIELD}" type="{kind}" name="{name}" value="{esc(value)}" {extra}></label>')
 
 
-def default_values(today: date, query) -> dict:
-    saturday = today + timedelta(days=(5 - today.weekday()) % 7 or 7)
+def default_values(now: datetime, query) -> dict:
+    saturday = default_day(now)  # тот же день по умолчанию, что у команды /plan в боте
     get = query.get
     return {"day": get("day", saturday.isoformat()), "window_from": get("window_from", "10:00"), "window_to": get("window_to", "22:00"),
             "budget": get("budget", ""), "adults": get("adults", "1"), "children": get("children", ""), "city": get("city", ""),
@@ -86,8 +86,9 @@ def parse_request(values: dict, cities: list[str], today: date) -> PlanRequest:
 
 
 def build_page(session: Session, query) -> str:
-    today = now_local().date()
-    values = default_values(today, query)
+    now = now_local()
+    today = now.date()
+    values = default_values(now, query)
     cities = [c["name"] for c in facets(session)["cities"]]
     if "day" not in query:  # первое открытие: только форма
         return render(values, cities)
@@ -95,7 +96,7 @@ def build_page(session: Session, query) -> str:
         request = parse_request(values, cities, today)
     except FormError as exc:
         return render(values, cities, error=str(exc))
-    return render(values, cities, plan_weekend(session, request))
+    return render(values, cities, plan_weekend(session, request, now))
 
 
 def _tile_head(icon: str, tone: str, title: str, hint: str = "") -> str:

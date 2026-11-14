@@ -213,7 +213,9 @@ def body_too_large(request: Request) -> JSONResponse | None:
             return error_response(411, "Нужен заголовок Content-Length")
         return None  # запрос без тела
     limit = MAX_BODY_BULK if request.url.path in BULK_PATHS else MAX_BODY
-    if not declared.isdigit() or int(declared) > limit:
+    # isascii: «²».isdigit() тоже истинно, а int("²") падает. uvicorn такой заголовок не пропустит, но защита не должна
+    # зависеть от сервера перед ней
+    if not (declared.isascii() and declared.isdigit()) or int(declared) > limit:
         return error_response(413, f"Тело запроса больше {limit // 1024} КБ")
     return None
 
