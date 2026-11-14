@@ -20,10 +20,10 @@ import urllib.request
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import date, datetime, time as dtime
-from urllib.robotparser import RobotFileParser
 
 from ..config import LOCAL_TZ, PUBLIC_URL, now_local
 from ..normalize import canonical_category, find_city_in_text
+from .robots import Robots
 from .base import SourceError  # noqa: F401  (общий тип ошибки всех источников; импортируется отсюда и в тестах)
 
 log = logging.getLogger("afisha.culture_ru")
@@ -160,9 +160,7 @@ def http_get(url: str, *, retries: int = 5, timeout: float = 20.0) -> str:
 
 def ensure_allowed(url: str, fetch: Callable[[str], str] = http_get) -> None:
     """Не ходим туда, куда сайт просит не ходить. Не удалось прочитать robots.txt: останавливаемся."""
-    parser = RobotFileParser()
-    parser.parse(fetch(BASE + "/robots.txt").splitlines())
-    if not parser.can_fetch(USER_AGENT, url):
+    if not Robots(fetch(BASE + "/robots.txt")).can_fetch(USER_AGENT, url):
         raise SourceError(f"robots.txt culture.ru запрещает обход {url}")
 
 

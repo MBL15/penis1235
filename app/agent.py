@@ -670,6 +670,15 @@ def _rules_ask(session: Session, message: str, history: list[dict], now: datetim
         )
     shown = events[:MAX_SHOWN]
     reply = f"Нашёл {total} {_plural(total)} ({asked}). Показываю ближайшие {len(shown)}."
+    if blocking and relaxed[0][0] == "q" and not parsed.guessed_q and not (filters.category or filters.kids):
+        # Человек прямо назвал, что ищет («джаз в Салавате»), а этого нет, и без слова от темы ничего не остаётся: честный
+        # отказ без чужих карточек (ТЗ Прил. А, метрика №5). Если тема остаётся («кукольный» → детские спектакли),
+        # ниже показываем близкое с оговоркой: «сначала ответ, потом предложение сузить» (§7.3).
+        return AgentResult(
+            reply=(f"По запросу ({asked}) событий со словом «{asked_word}» в афише нет. Без этого слова по остальным условиям "
+                   f"есть {total} {_plural(total)}: напишите запрос без него, и я их покажу.") + caveats,
+            mode="rules", filters=filters.describe(),
+        )
     if blocking and relaxed[0][0] == "q":
         reply = (
             f"По запросу ({asked}) событий со словом «{asked_word}» не нашлось. "

@@ -1,7 +1,7 @@
 import logging
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -12,6 +12,18 @@ log = logging.getLogger("afisha.db")
 
 _connect_args = {"check_same_thread": False} if config.DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(config.DATABASE_URL, connect_args=_connect_args)
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_connection, _record) -> None:
+    """Одна SQLite у сайта, бота и планировщика (docker-compose): WAL — чтение не ждёт записи синхронизации, busy_timeout —
+    запись ждёт освобождения базы до 5 с вместо ошибки «database is locked». У базы в памяти (тесты) WAL не бывает."""
+    if engine.url.drivername.startswith("sqlite"):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA busy_timeout=5000")
+        if engine.url.database not in (None, "", ":memory:"):
+            cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.close()
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
 
 

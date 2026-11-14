@@ -58,7 +58,7 @@ from .hints import empty_hint
 from .planner import PlanRequest, plan_weekend
 from .search import WHEN_VALUES, SearchFilters, facets, get_event, resolve_when, search, venues
 from .security import RateLimiter, ask_limiter
-from .telegram_auth import validate_init_data
+from .telegram_auth import MAX_AGE_SECONDS, WRITE_MAX_AGE_SECONDS, validate_init_data
 from . import subscriptions
 
 router = APIRouter(dependencies=[accounts.PartnerKeyDep], responses={
@@ -282,7 +282,8 @@ def telegram_chat(request: Request, user: accounts.OptionalUser) -> int:
     if not config.TELEGRAM_BOT_TOKEN:
         raise HTTPException(503, "Подписки через API работают из мини-приложения Telegram; на этом сервере они не настроены. "
                                  "Оформите подписку в боте: /subscribe")
-    chat_id = validate_init_data(request.headers.get("x-telegram-init-data", ""), config.TELEGRAM_BOT_TOKEN)
+    max_age = MAX_AGE_SECONDS if request.method in ("GET", "HEAD") else WRITE_MAX_AGE_SECONDS  # изменения — по свежей подписи
+    chat_id = validate_init_data(request.headers.get("x-telegram-init-data", ""), config.TELEGRAM_BOT_TOKEN, max_age=max_age)
     if chat_id is None:
         raise HTTPException(401, "Нужна подпись Telegram: откройте афишу из бота или войдите через Telegram в кабинете "
                                  "(заголовок X-Telegram-Init-Data)")

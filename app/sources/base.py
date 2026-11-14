@@ -15,9 +15,9 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from datetime import datetime
-from urllib.robotparser import RobotFileParser
 
 from ..config import LOCAL_TZ, PUBLIC_URL
+from .robots import Robots
 
 log = logging.getLogger("afisha.sources")
 
@@ -74,7 +74,7 @@ class Fetcher:
             else urllib.request.build_opener(urllib.request.ProxyHandler({}), redirects)
         )
         self._sleep, self._clock = sleep, clock
-        self._robots: dict[str, RobotFileParser | None] = {}
+        self._robots: dict[str, Robots | None] = {}
         self._last_hit: dict[str, float] = {}
         self.requests = 0
 
@@ -122,7 +122,7 @@ class Fetcher:
             self._sleep(wait)
         self._last_hit[host] = self._clock()
 
-    def _robots_for(self, url: str) -> RobotFileParser | None:
+    def _robots_for(self, url: str) -> Robots | None:
         parts = urllib.parse.urlsplit(url)
         origin = f"{parts.scheme}://{parts.netloc}"
         if origin not in self._robots:
@@ -130,9 +130,7 @@ class Fetcher:
             if status in (404, 410):
                 self._robots[origin] = None  # файла нет: ограничений нет
             else:
-                parser = RobotFileParser()
-                parser.parse(text.splitlines())
-                self._robots[origin] = parser
+                self._robots[origin] = Robots(text)
         return self._robots[origin]
 
     def allowed(self, url: str) -> bool:

@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 
-from . import accounts, config, errors
+from . import accounts, config, dialogs, errors
 from .api_accounts import admin_router as users_admin_router
 from .api_accounts import router as accounts_router
 from .api_admin import router as admin_router
@@ -74,6 +74,7 @@ async def lifespan(_: FastAPI):
         purge_old(session)  # срок хранения обращений
         purge_traces(session)  # трассы ответов агента
         purge_actions(session)
+        dialogs.purge(session)  # диалоги бота старше суток
         accounts.purge_history(session)  # история посещений старше срока хранения
         accounts.purge_sessions(session)  # просроченные входы
     if config.ADMIN_API_KEY and len(config.ADMIN_API_KEY) < config.ADMIN_KEY_MIN_LENGTH:
@@ -83,7 +84,34 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Афиша культуры Башкортостана", version=config.API_VERSION, description=DESCRIPTION,
-              openapi_tags=TAGS, lifespan=lifespan)
+              openapi_tags=TAGS, lifespan=lifespan, docs_url=None, redoc_url=None)
+
+# Страницы документации берут скрипты с CDN. По умолчанию FastAPI ссылается на плавающую версию (swagger-ui-dist@5, redoc@2):
+# новая версия пакета попала бы на наш домен без проверки. Версии закреплены точно (ревью 14.11.2026, Б-5).
+SWAGGER_UI = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14"
+REDOC_JS = "https://cdn.jsdelivr.net/npm/redoc@2.1.5/bundles/redoc.standalone.js"
+
+
+@app.get("/docs", include_in_schema=False)
+def swagger_docs() -> Response:
+    from fastapi.openapi.docs import get_swagger_ui_html
+
+    return get_swagger_ui_html(openapi_url=app.openapi_url, title=f"{app.title} — API", swagger_js_url=f"{SWAGGER_UI}/swagger-ui-bundle.js",
+                               swagger_css_url=f"{SWAGGER_UI}/swagger-ui.css", oauth2_redirect_url="/docs/oauth2-redirect")
+
+
+@app.get("/docs/oauth2-redirect", include_in_schema=False)
+def swagger_redirect() -> Response:
+    from fastapi.openapi.docs import get_swagger_ui_oauth2_redirect_html
+
+    return get_swagger_ui_oauth2_redirect_html()
+
+
+@app.get("/redoc", include_in_schema=False)
+def redoc_docs() -> Response:
+    from fastapi.openapi.docs import get_redoc_html
+
+    return get_redoc_html(openapi_url=app.openapi_url, title=f"{app.title} — API", redoc_js_url=REDOC_JS)
 errors.install(app)
 # Чужим сайтам (виджет, сайт министерства) открыто только чтение. POST и PATCH из браузера с другого сайта
 # не проходят: иначе любая страница могла бы тратить квоту ИИ руками своих посетителей.

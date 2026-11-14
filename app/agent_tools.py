@@ -333,8 +333,18 @@ def run_tool(ctx: ToolContext, name: str, args: dict) -> dict:
     return result
 
 
+def _safe_value(value):
+    """Аргумент для трассы: числа и флаги как есть, списки списками (обрезанными), остальное строкой до 200 символов.
+    Списки раньше превращались в строку «[382, 489]», и метрику точности инструментов нельзя было посчитать по трассе кодом."""
+    if isinstance(value, (int, float, bool, type(None))):
+        return value
+    if isinstance(value, list):
+        return [v if isinstance(v, (int, float, bool, type(None))) else str(v)[:60] for v in value[:30]]
+    return str(value)[:200]
+
+
 def _safe_args(args: dict) -> dict:
-    return {str(k)[:40]: (v if isinstance(v, (int, float, bool, type(None))) else str(v)[:200]) for k, v in list(args.items())[:20]}
+    return {str(k)[:40]: _safe_value(v) for k, v in list(args.items())[:20]}
 
 
 def _dispatch(ctx: ToolContext, name: str, args: dict) -> tuple[dict, list[Event], int | None]:

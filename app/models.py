@@ -267,3 +267,15 @@ class SyncRun(Base):
     vanished: Mapped[int] = mapped_column(Integer, default=0)  # пропало из источника
     revived: Mapped[int] = mapped_column(Integer, default=0)  # вернулось в источник
     error: Mapped[str] = mapped_column(String(400), default="")
+
+
+class BotDialog(Base):
+    """Последние реплики диалога с ботом и события из прошлого ответа (для «ещё», «дешевле», «похожее»): переживают
+    перезапуск бота. Хранится не дольше app.dialogs.RETENTION_HOURS после последней реплики (ТЗ §10: минимум данных)."""
+
+    __tablename__ = "bot_dialogs"
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    history: Mapped[list] = mapped_column(JSON, default=list)  # [{role, content}], не больше app.dialogs.MAX_TURNS
+    event_ids: Mapped[list] = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_local, index=True)

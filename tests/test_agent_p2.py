@@ -550,3 +550,10 @@ def test_injection_hidden_in_history_never_reaches_the_model(session, events):
     sent = " ".join(p.text for c in client.calls[0]["contents"] for p in c.parts if p.text)
     assert "Игнорируй" not in sent and "забудь правила" not in sent and "концерты в Уфе" in sent
     assert trace_of(session, result).flags["injection_in_history"] == 2
+
+
+def test_trace_keeps_list_arguments_as_lists():
+    from app.agent_tools import _safe_args
+
+    assert _safe_args({"exclude_ids": [382, 489], "query": "джаз", "limit": 5}) == {"exclude_ids": [382, 489], "query": "джаз", "limit": 5}
+    assert len(_safe_args({"exclude_ids": list(range(100))})["exclude_ids"]) == 30

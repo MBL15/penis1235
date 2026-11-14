@@ -506,3 +506,28 @@ def test_a_flaky_send_keeps_the_reply_and_a_blocked_bot_stops_retrying(session, 
     assert asyncio.run(bot.send_feedback_replies(Bot(TOKEN))) == 0 and item.notified_at is not None  # заблокировал: больше не пишем
     send.reset_mock()
     assert asyncio.run(bot.send_feedback_replies(Bot(TOKEN))) == 0 and send.await_count == 0
+
+def test_dialog_survives_a_bot_restart(session, monkeypatch):
+    """Т-11: история диалога и события прошлого ответа пишутся в базу; после перезапуска (пустая память) «а ещё» работает."""
+    from contextlib import nullcontext
+
+    from app import dialogs
+
+    monkeypatch.setattr(bot, "SessionLocal", lambda: nullcontext(session))
+    bot.agent_view(CHAT, "концерты в Уфе")
+    saved_history, _ = dialogs.load(session, CHAT)
+    assert [t["role"] for t in saved_history] == ["user", "assistant"]
+    bot.chat_history.clear()
+    bot.chat_events.clear()  # перезапуск процесса
+    seen = {}
+    real_ask = bot.ask
+
+    def spy(s, message, history, **kw):
+        seen["history"] = history
+        return real_ask(s, message, history, **kw)
+
+    monkeypatch.setattr(bot, "ask", spy)
+    bot.agent_view(CHAT, "а ещё?")
+    assert [t["content"] for t in seen["history"]][:1] == ["концерты в Уфе"]
+    assert len(dialogs.load(session, CHAT)[0]) == 4
+    dialogs.forget(session, CHAT)
