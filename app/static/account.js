@@ -6,13 +6,13 @@
   const CARD = 'grid gap-3 rounded-panel border border-stroke bg-glass-hi p-6 shadow-surface w600:p-4';
   const H2 = 'm-0 text-[1.2rem] font-extrabold';
   const BTN = 'min-h-[44px] rounded-ctl bg-brand px-5 font-bold text-white shadow-cta tx-btn hover:bg-brand-hover disabled:cursor-progress disabled:opacity-60';
-  const BTN2 = 'min-h-[40px] rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink shadow-surface hover:bg-white';
+  const BTN2 = 'min-h-[40px] rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink shadow-surface hover:bg-surface';
   const BTN_BAD = 'min-h-[40px] rounded-field border border-stroke bg-bad-bg px-4 font-[650] text-bad hover:opacity-90';
   const INPUT = 'min-h-[44px] w-full rounded-field border border-line bg-glass-field px-[14px] py-[8px] text-base font-medium text-ink tx-field focus-visible:border-brand focus-visible:shadow-focus focus-visible:outline-none';
   const LABEL = 'grid gap-[6px] text-[.82rem] font-bold tracking-[.02em] text-ink-3';
   const MUTED = 'm-0 text-[.9rem] text-ink-3';
-  const ROW = 'flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-stroke bg-white/60 px-3 py-2';
-  const LINK = 'font-semibold text-brand underline underline-offset-2';
+  const ROW = 'flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-stroke bg-surface/60 px-3 py-2';
+  const LINK = 'font-semibold text-accent underline underline-offset-2';
   const KIND = { view: 'открыта карточка', ticket: 'переход по ссылке источника' };
   const inTelegram = /tgWebApp(Data|Platform)=/.test(location.hash);
   let me = null;
@@ -21,20 +21,7 @@
 
   // ---------- вспомогательное ----------
 
-  async function api(path, options = {}) {
-    const response = await fetch(path, {
-      ...options, cache: 'no-store',
-      headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
-    });
-    if (response.status === 204) return null;
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const error = new Error((data.error && data.error.message) || `Ошибка ${response.status}`);
-      error.status = response.status;
-      throw error;
-    }
-    return data;
-  }
+  const api = afishaApi.create({ cache: 'no-store' }); // общий клиент: /static/api.js
 
   const fmt = (iso) => {
     const m = /^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d)/.exec(iso || '');
@@ -109,7 +96,7 @@
   $('#tg-miniapp').addEventListener('click', () => guarded(async () => {
     const initData = await telegramInitData();
     if (!initData) { say('Не удалось получить подпись Telegram. Откройте кабинет из бота.', true); return; }
-    me = await api('/api/v1/auth/telegram', { method: 'POST', body: JSON.stringify({ init_data: initData }) });
+    me = await api.post('/api/v1/auth/telegram', { init_data: initData });
     render();
   }));
 
@@ -269,24 +256,24 @@
     event.preventDefault();
     busy(event.submitter, () => guarded(async () => {
       if (id === 'subs-form') {
-        await api('/api/v1/subscriptions', { method: 'POST', body: JSON.stringify({ city: $('#subs-city').value, category: $('#subs-cat').value }) });
+        await api.post('/api/v1/subscriptions', { city: $('#subs-city').value, category: $('#subs-cat').value });
         say('Подписка оформлена.');
         await loadSubs();
       } else if (id === 'srch-form') {
         const filters = { q: $('#s-q').value.trim(), city: $('#s-city').value, category: $('#s-cat').value,
           free: $('#s-free').checked, kids: $('#s-kids').checked };
         if ($('#s-price').value !== '') filters.price_max = Number($('#s-price').value);
-        await api('/api/v1/me/searches', { method: 'POST', body: JSON.stringify({ name: $('#s-name').value.trim(), filters }) });
+        await api.post('/api/v1/me/searches', { name: $('#s-name').value.trim(), filters });
         event.target.reset();
         say('Поиск сохранён.');
         await loadSearches();
       } else {
-        const created = await api('/api/v1/me/api-keys', { method: 'POST', body: JSON.stringify({ name: $('#k-name').value.trim() }) });
+        const created = await api.post('/api/v1/me/api-keys', { name: $('#k-name').value.trim() });
         event.target.reset();
         const box = $('#keys-new');
         box.hidden = false;
         box.innerHTML = `<b>Ключ «${esc(created.name)}»: скопируйте сейчас, потом он не покажется</b>
-          <code class="break-all rounded-field bg-white px-3 py-2 text-[.95rem]">${esc(created.key)}</code>
+          <code class="break-all rounded-field bg-surface px-3 py-2 text-[.95rem]">${esc(created.key)}</code>
           <span class="${MUTED}">Пример: <code>curl -H "X-Partner-Key: ${esc(created.key)}" ${esc(location.origin)}/api/v1/events</code></span>`;
         await loadKeys();
       }
@@ -367,22 +354,22 @@
       switch (button.dataset.act) {
         case 'clear-history': {
           if (!confirm('Стереть всю историю посещений?')) return;
-          const done = await api('/api/v1/me/history', { method: 'DELETE' });
+          const done = await api.delete('/api/v1/me/history');
           say(`Стёрто записей: ${done.removed}.`);
           await loadHistory();
           break;
         }
-        case 'unsub': await api(`/api/v1/subscriptions/${Number(id)}`, { method: 'DELETE' }); await fadeOut(button.closest('div')); await loadSubs(); say('Вы отписались.'); break;
+        case 'unsub': await api.delete(`/api/v1/subscriptions/${Number(id)}`); await fadeOut(button.closest('div')); await loadSubs(); say('Вы отписались.'); break;
         case 'run-search': await runSearch(id); break;
-        case 'del-search': await api(`/api/v1/me/searches/${Number(id)}`, { method: 'DELETE' }); await fadeOut(button.closest('[data-search]')); await loadSearches(); say('Поиск удалён.'); break;
+        case 'del-search': await api.delete(`/api/v1/me/searches/${Number(id)}`); await fadeOut(button.closest('[data-search]')); await loadSearches(); say('Поиск удалён.'); break;
         case 'revoke-key':
           if (!confirm('Отозвать ключ? Сайты, которые его используют, перестанут получать данные.')) return;
-          await api(`/api/v1/me/api-keys/${Number(id)}`, { method: 'DELETE' });
+          await api.delete(`/api/v1/me/api-keys/${Number(id)}`);
           await loadKeys();
           break;
         case 'delete-account':
           if (!confirm('Удалить аккаунт и все данные о себе: историю, подписки, сохранённые поиски, ключи? Это нельзя отменить.')) return;
-          await api('/api/v1/me', { method: 'DELETE' });
+          await api.delete('/api/v1/me');
           me = await api('/api/v1/me');
           render();
           say('Аккаунт и данные удалены.');
@@ -399,14 +386,14 @@
     const turnOn = box.checked;
     if (!turnOn && !confirm('Выключить историю? Всё, что собрано, будет стёрто.')) { box.checked = true; return; }
     guarded(async () => {
-      me = await api('/api/v1/me', { method: 'PATCH', body: JSON.stringify({ history_enabled: turnOn }) });
+      me = await api.patch('/api/v1/me', { history_enabled: turnOn });
       say(turnOn ? 'История включена: открытые карточки попадут сюда.' : 'История выключена и стёрта.');
       await loadHistory();
     });
   });
 
   $('#logout').addEventListener('click', () => guarded(async () => {
-    await api('/api/v1/auth/logout', { method: 'POST' });
+    await api.post('/api/v1/auth/logout');
     me = await api('/api/v1/me');
     render();
     say('Вы вышли.');

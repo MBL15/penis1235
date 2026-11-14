@@ -4,11 +4,11 @@
   const params = new URLSearchParams(location.search);
   const eventId = /^\d{1,10}$/.test(params.get('event') || '') ? Number(params.get('event')) : null;
   let token = '';
+  const api = afishaApi.create({ cache: 'no-store' }); // общий клиент: /static/api.js
 
   async function loadForm() {
     try {
-      const response = await fetch('/api/v1/feedback/form', { cache: 'no-store' });
-      const data = await response.json();
+      const data = await api.get('/api/v1/feedback/form');
       token = data.token;
       if (!$('#kind').options.length) {
         $('#kind').innerHTML = data.kinds.map((k) => `<option value="${k.slug}">${k.label.replace(/[&<>"']/g, '')}</option>`).join('');
@@ -41,24 +41,17 @@
     const send = $('#send');
     send.disabled = true;
     try {
-      const response = await fetch('/api/v1/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: $('#kind').value, event_id: eventId, message, contact: $('#contact').value.trim(), token, website: $('#website').value }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const error = data.error || {};
-        const details = (error.details || []).map((d) => d.message).join('; ');
-        problem([error.message || `Ошибка ${response.status}`, details].filter(Boolean).join(': '));
-        await loadForm(); // метка одноразовая по смыслу: берём свежую для повторной отправки
-        return;
-      }
+      const data = await api.post('/api/v1/feedback', { kind: $('#kind').value, event_id: eventId, message, contact: $('#contact').value.trim(), token, website: $('#website').value });
       $('#form').hidden = true;
       $('#done').hidden = false;
-      $('#done-text').textContent = data.message || 'Обращение принято.';
-    } catch (_) {
-      problem('Не удалось отправить обращение. Проверьте соединение и попробуйте ещё раз.');
+      $('#done-text').textContent = (data && data.message) || 'Обращение принято.';
+    } catch (error) {
+      if (error instanceof afishaApi.ApiError) {
+        problem(error.message);
+        await loadForm(); // метка одноразовая по смыслу: берём свежую для повторной отправки
+      } else {
+        problem('Не удалось отправить обращение. Проверьте соединение и попробуйте ещё раз.');
+      }
     } finally {
       send.disabled = false;
     }

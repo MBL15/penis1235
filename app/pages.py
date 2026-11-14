@@ -16,8 +16,8 @@ from .normalize import CATEGORIES, LANGUAGES, STATUSES
 BUTTON = ("inline-flex min-h-[50px] items-center justify-center gap-2 rounded-ctl px-6 font-bold no-underline tx-btn "
           "w600:w-full")
 PRIMARY = f"{BUTTON} bg-brand text-white shadow-cta hover:bg-brand-hover"
-SECONDARY = f"{BUTTON} border border-stroke bg-glass-hi text-brand-ink shadow-surface hover:bg-white"
-CHIP = "rounded-full border border-stroke bg-white/[.78] px-3 py-[3px] text-[.85rem] font-semibold text-ink-2"
+SECONDARY = f"{BUTTON} border border-stroke bg-glass-hi text-brand-ink shadow-surface hover:bg-surface"
+CHIP = "rounded-full border border-stroke bg-surface/[.78] px-3 py-[3px] text-[.85rem] font-semibold text-ink-2"
 BANNERS = {  # статус → оформление плашки: отмена и перенос нельзя пропустить
     "cancelled": "rounded-ctl bg-bad-bg px-4 py-3 font-bold text-bad",
     "rescheduled": "rounded-ctl border border-warn-line bg-warn-bg px-4 py-3 font-bold text-warn",
@@ -32,6 +32,12 @@ BANNER_TEXT = {
 
 _ICON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{}</svg>'
 _ICON_BELL = _ICON.format('<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/>')
+# Значки статусов: отмену и перенос видно по форме, а не только по цвету плашки (дальтонизм)
+_ICON_STATUS = {
+    "cancelled": _ICON.format('<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/>'),
+    "rescheduled": _ICON.format('<path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4.5M12 17.2v.1"/>'),
+    "sold_out": _ICON.format('<path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4.5M12 17.2v.1"/>'),
+}
 _ICON_SHARE = _ICON.format('<circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="m8.3 10.8 7.4-3.6M8.3 13.2l7.4 3.6"/>')
 
 
@@ -68,11 +74,11 @@ def _layout(title: str, description: str, body: str, *, path: str = "", image: s
   <link rel="stylesheet" href="/static/tailwind.css">
   <link rel="stylesheet" href="/static/ui.css">
 </head>
-<body class="min-h-screen bg-art bg-[#eef2fb] bg-fixed text-ink antialiased">
-  <header class="mx-auto flex {width} items-center justify-between gap-3 px-4 pt-4">
-    <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-white">← К афише</a>
-    <nav class="flex items-center gap-1"><a href="/account" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink">Кабинет</a>
-    <a href="/docs" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-white/70 hover:text-ink w600:hidden">API</a></nav>
+<body class="min-h-screen bg-art bg-page bg-fixed text-ink antialiased">
+  <header class="mx-auto flex {width} flex-wrap items-center justify-between gap-3 px-4 pt-4">
+    <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-surface">← К афише</a>
+    <nav class="flex items-center gap-1"><span class="contents" data-a11y-slot></span><a href="/account" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-surface/70 hover:text-ink">Кабинет</a>
+    <a href="/docs" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-surface/70 hover:text-ink w600:hidden">API</a></nav>
   </header>
   <main class="mx-auto {width} px-4 pb-12 pt-5">
 {body}
@@ -116,7 +122,8 @@ def render_event_page(event: Event, now: datetime | None = None) -> str:
     price = price_text(event)
     banner = ""
     if event.status in BANNERS:
-        banner = f'<p role="alert" class="m-0 {BANNERS[event.status]}">{esc(status)}. {esc(BANNER_TEXT[event.status])}</p>'
+        banner = (f'<p role="alert" class="m-0 flex items-start gap-2 {BANNERS[event.status]}"><span class="flex-none pt-px">{_ICON_STATUS[event.status]}</span>'
+                  f'<span>{esc(status)}. {esc(BANNER_TEXT[event.status])}</span></p>')
     elif is_past(event, now):
         banner = f'<p class="m-0 {BANNERS["sold_out"]}">Это событие уже прошло.</p>'
 
@@ -152,7 +159,7 @@ def render_event_page(event: Event, now: datetime | None = None) -> str:
     sources = []
     for src in event.sources or []:
         name, url = esc(src.get("name", "источник")), _https(src.get("url"))
-        link = (f'<a class="font-semibold text-brand underline underline-offset-2" href="{esc(url)}" target="_blank" '
+        link = (f'<a class="font-semibold text-accent underline underline-offset-2" href="{esc(url)}" target="_blank" '
                 f'rel="noopener noreferrer" data-visit="ticket" data-event="{int(event.id)}">{name}'
                 f'<span class="sr-only"> (откроется в новой вкладке)</span></a>') if url else name
         state = STATUSES.get(src.get("status"), "") or "статус источником не указан"
@@ -190,7 +197,7 @@ def render_event_page(event: Event, now: datetime | None = None) -> str:
       <div class="text-ink-2">{description}</div>
       {source_block}
       <div class="mt-2 ui-actions">{"".join(actions)}</div>
-      <p class="m-0 text-[.85rem] text-ink-3">{esc(stamp)} Постоянная ссылка на эту карточку: <a class="text-brand underline underline-offset-2" href="/event/{int(event.id)}">/event/{int(event.id)}</a></p>
+      <p class="m-0 text-[.85rem] text-ink-3">{esc(stamp)} Постоянная ссылка на эту карточку: <a class="text-accent underline underline-offset-2" href="/event/{int(event.id)}">/event/{int(event.id)}</a></p>
     </article>
     <script type="application/ld+json">{_structured_data(event)}</script>"""
     return _layout(title, summary or event.title, body, path=f"/event/{int(event.id)}", image=event.image_url or "")
@@ -214,7 +221,7 @@ def render_trace_page(trace) -> str:
     mode = "ответила модель" if trace.mode == "llm" else "режим без ИИ: разбор запроса по правилам"
     rows = []
     for number, step in enumerate(trace.steps, 1):
-        ids = ", ".join(f'<a class="text-brand underline" href="/event/{int(i)}">№{int(i)}</a>' for i in step.get("event_ids", [])[:12]) or "—"
+        ids = ", ".join(f'<a class="text-accent underline" href="/event/{int(i)}">№{int(i)}</a>' for i in step.get("event_ids", [])[:12]) or "—"
         status = "" if step.get("ok", True) else f' <b class="text-bad">ошибка: {esc(step.get("error", ""))}</b>'
         rows.append(f'<tr><td class="border-t border-line px-2 py-2 align-top">{number}</td><td class="border-t border-line px-2 py-2 align-top font-semibold">{esc(step.get("tool"))}{status}</td>'
                     f'<td class="border-t border-line px-2 py-2 align-top [overflow-wrap:anywhere]">{esc(_args_text(step.get("args", {})))}</td>'
@@ -231,7 +238,7 @@ def render_trace_page(trace) -> str:
         if trace.plan.get(key):
             extras.append(f"<li>{label}: {esc(', '.join(map(str, trace.plan[key])))}</li>")
     flags = ", ".join(f"{esc(k)}" for k in trace.flags) or "нет"
-    events = "".join(f'<li><a class="text-brand underline" href="/event/{int(e["id"])}">{esc(e.get("title") or "событие")}</a> <span class="text-ink-3">№{int(e["id"])}</span></li>'
+    events = "".join(f'<li><a class="text-accent underline" href="/event/{int(e["id"])}">{esc(e.get("title") or "событие")}</a> <span class="text-ink-3">№{int(e["id"])}</span></li>'
                      for e in trace.events) or "<li>событий не показано</li>"
     cost = f"{trace.cost_rub:g} ₽" if trace.cost_rub is not None else (esc(trace.cost_note) if trace.cost_note else "0 ₽ (модель не вызывалась)")
     section = "mt-2 grid gap-2"

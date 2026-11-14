@@ -9,9 +9,10 @@
   <link rel="stylesheet" href="/static/tailwind.css">
   <link rel="stylesheet" href="/static/ui.css">
 </head>
-<body class="min-h-screen bg-art bg-[#eef2fb] bg-fixed text-ink antialiased">
-  <header class="mx-auto flex max-w-[820px] items-center justify-between gap-3 px-4 pt-4">
-    <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-white">← К афише</a>
+<body class="min-h-screen bg-art bg-page bg-fixed text-ink antialiased">
+  <header class="mx-auto flex max-w-[820px] flex-wrap items-center justify-between gap-3 px-4 pt-4">
+    <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-surface">← К афише</a>
+    <span class="contents" data-a11y-slot></span>
   </header>
 
   <main class="mx-auto max-w-[820px] px-4 pb-12 pt-5">
@@ -51,6 +52,7 @@
     <p class="mx-auto mt-6 max-w-[780px] text-center text-[.85rem] text-ink-3">Неофициальный сервис: не является сервисом Министерства культуры Республики Башкортостан и не связан с ним. Данные собраны из открытых источников, перед визитом уточняйте их у организатора.</p>
   </main>
   <script src="/static/ui.js" defer></script>
+  <script src="/static/api.js"></script>
   <script src="/static/feedback.js"></script>
 </body>
 </html>

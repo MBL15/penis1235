@@ -1,12 +1,13 @@
-/* Общие элементы интерфейса на всех страницах: панель разделов, уведомления, переходы между страницами, отклик на нажатие.
-   Цвета и скругления те же, что в tailwind.config.js. Все движения отключаются у тех, кто выбрал «уменьшить движение». */
+/* Общие элементы интерфейса на всех страницах: панель разделов, уведомления, переходы между страницами, отклик на нажатие,
+   панель «Удобство просмотра». Цвета берутся из переменных темы (tailwind.config.js), поэтому работают и в тёмной теме,
+   и в высоком контрасте. Все движения отключаются у тех, кто выбрал «уменьшить движение» в системе или в панели. */
 :root {
-  --ui-brand: #4f46e5;
-  --ui-brand-ink: #3730a3;
-  --ui-ink: #172036;
-  --ui-glass: rgba(255, 255, 255, .92);
-  --ui-line: rgba(255, 255, 255, .9);
-  --ui-shadow: 0 10px 30px rgba(52, 64, 120, .18), inset 0 1px 0 rgba(255, 255, 255, .9);
+  --ui-brand: rgb(var(--brand));
+  --ui-brand-ink: rgb(var(--brand-ink));
+  --ui-ink: rgb(var(--ink));
+  --ui-glass: rgb(var(--glass) / var(--glass-solid-a));
+  --ui-line: rgb(var(--stroke) / var(--stroke-a));
+  --ui-shadow: var(--shadow-surface-2);
   --ui-ease: cubic-bezier(.22, 1, .36, 1);
   --ui-spring: cubic-bezier(.34, 1.56, .64, 1);
   --ui-nav-h: 64px;
@@ -32,30 +33,33 @@
 .ui-nav a {
   position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   min-width: 76px; min-height: 52px; padding: 6px 12px; border-radius: 16px;
-  color: #34405f; font-weight: 650; font-size: .74rem; line-height: 1.1; text-decoration: none; text-align: center;
+  /* Подписи растут с настройкой «Размер текста», но на узком экране не шире своей ячейки: пять разделов должны поместиться */
+  color: rgb(var(--ink-2)); font-weight: 650; font-size: min(.74rem, 3.2vw); line-height: 1.1; text-decoration: none; text-align: center;
   transition: background .2s, color .2s, transform .18s var(--ui-ease);
 }
+.ui-nav a span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-nav a svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .3s var(--ui-spring); }
-.ui-nav a:hover { background: rgba(79, 70, 229, .09); color: var(--ui-brand-ink); }
+.ui-nav a:hover { background: rgb(var(--brand) / .09); color: var(--ui-brand-ink); }
 .ui-nav a:hover svg { transform: translateY(-2px) scale(1.08); }
 .ui-nav a:active { transform: scale(.94); }
-.ui-nav a[aria-current="page"] { background: var(--ui-brand); color: #fff; box-shadow: 0 8px 18px rgba(79, 70, 229, .35); }
+.ui-nav a[aria-current="page"] { background: var(--ui-brand); color: #fff; box-shadow: 0 8px 18px rgb(var(--brand) / .35); }
 .ui-nav a[aria-current="page"] svg { transform: scale(1.06); }
-.ui-nav .ui-dot { position: absolute; top: 6px; right: 18px; width: 9px; height: 9px; border-radius: 50%; background: #16a34a; border: 2px solid #fff; animation: ui-pop .4s var(--ui-spring); }
+.ui-nav .ui-dot { position: absolute; top: 6px; right: 18px; width: 9px; height: 9px; border-radius: 50%; background: #16a34a; border: 2px solid rgb(var(--surface)); animation: ui-pop .4s var(--ui-spring); }
 @keyframes ui-pop { from { transform: scale(0); } }
 body.ui-has-nav { padding-bottom: calc(var(--ui-nav-h) + 28px + env(safe-area-inset-bottom)); }
 /* На главной в широком окне все разделы уже есть в верхней панели: нижняя не нужна. */
 @media (min-width: 761px) { body.ui-home .ui-nav { display: none; } body.ui-home.ui-has-nav { padding-bottom: 0; } }
 /* В мини-приложении Telegram своя нижняя кнопка: панель поднимаем, чтобы они не пересекались. */
 .tg .ui-nav { bottom: max(70px, calc(env(safe-area-inset-bottom) + 58px)); }
-@media (max-width: 420px) { .ui-nav a { min-width: 0; flex: 1; padding: 6px 8px; } .ui-nav { left: 12px; right: 12px; transform: none; animation-name: ui-nav-in-mobile; } }
+@media (max-width: 420px) { .ui-nav a { min-width: 0; flex: 1 1 auto; padding: 6px 2px; } .ui-nav { left: 12px; right: 12px; transform: none; animation-name: ui-nav-in-mobile; } }
 @keyframes ui-nav-in-mobile { from { opacity: 0; transform: translateY(28px); } }
 
 /* ---------- уведомления: результат действия виден сразу, без поиска по странице ---------- */
 .ui-toasts { position: fixed; left: 50%; bottom: calc(var(--ui-nav-h) + 34px + env(safe-area-inset-bottom)); z-index: 70; display: grid; gap: 8px; justify-items: center; transform: translateX(-50%); width: min(92vw, 440px); pointer-events: none; }
 .ui-toast {
   pointer-events: auto; display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; border-radius: 16px;
-  background: #172036; color: #fff; font-weight: 600; box-shadow: 0 14px 34px rgba(23, 32, 54, .35);
+  background: rgb(var(--toast)); color: #fff; font-weight: 600; box-shadow: 0 14px 34px rgb(var(--scrim) / .35);
+  border: 1px solid rgb(255 255 255 / .08);
   animation: ui-toast-in .42s var(--ui-spring); transition: opacity .25s, transform .25s var(--ui-ease);
 }
 .ui-toast.ui-bad { background: #9b1c1c; }
@@ -68,12 +72,12 @@ button, [role="button"], .ui-press { transition: transform .16s var(--ui-ease), 
 button:not(:disabled):active, .ui-press:active { transform: scale(.965); }
 button[aria-busy="true"] { position: relative; color: transparent !important; pointer-events: none; }
 button[aria-busy="true"]::after { content: ""; position: absolute; inset: 0; margin: auto; width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid rgba(255, 255, 255, .55); border-top-color: #fff; animation: ui-spin .7s linear infinite; }
-.ui-secondary[aria-busy="true"]::after, .ui-spin-dark::after { border-color: rgba(79, 70, 229, .25); border-top-color: var(--ui-brand); }
+.ui-secondary[aria-busy="true"]::after, .ui-spin-dark::after { border-color: rgb(var(--brand) / .25); border-top-color: var(--ui-brand); }
 @keyframes ui-spin { to { transform: rotate(360deg); } }
 
 /* Заглушка, пока грузятся данные: понятно, что страница жива и что сюда придёт */
-.ui-skeleton { position: relative; overflow: hidden; border-radius: 14px; background: rgba(23, 32, 54, .07); min-height: 52px; }
-.ui-skeleton::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .7), transparent); transform: translateX(-100%); animation: ui-shimmer 1.3s ease-in-out infinite; }
+.ui-skeleton { position: relative; overflow: hidden; border-radius: 14px; background: rgb(var(--ink) / .07); min-height: 52px; }
+.ui-skeleton::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgb(var(--hl) / var(--hl-a)), transparent); transform: translateX(-100%); animation: ui-shimmer 1.3s ease-in-out infinite; }
 @keyframes ui-shimmer { to { transform: translateX(100%); } }
 
 /* Появление блоков по очереди: --i задаёт порядок */
@@ -81,35 +85,123 @@ button[aria-busy="true"]::after { content: ""; position: absolute; inset: 0; mar
 @keyframes ui-rise { from { opacity: 0; transform: translateY(18px); } }
 /* Новая строка списка и удаление */
 .ui-new { animation: ui-new .5s var(--ui-ease); }
-@keyframes ui-new { from { opacity: 0; transform: translateX(-12px); background: rgba(79, 70, 229, .14); } }
+@keyframes ui-new { from { opacity: 0; transform: translateX(-12px); background: rgb(var(--brand) / .14); } }
 .ui-gone { opacity: 0; transform: translateX(14px); height: 0 !important; margin: 0 !important; padding-top: 0 !important; padding-bottom: 0 !important; overflow: hidden; transition: all .3s var(--ui-ease); }
 
 /* Переключатель вместо кнопки «включить/выключить»: состояние видно без чтения текста */
 .ui-switch { position: relative; display: inline-flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer; font-weight: 650; }
 .ui-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.ui-switch .ui-track { position: relative; width: 52px; height: 30px; border-radius: 999px; background: #b7bfd6; transition: background .25s; flex: none; }
-.ui-switch .ui-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(23, 32, 54, .3); transition: transform .3s var(--ui-spring); }
-.ui-switch input:checked + .ui-track { background: #16a34a; }
+.ui-switch .ui-track { position: relative; width: 52px; height: 30px; border-radius: 999px; background: rgb(var(--track)); transition: background .25s; flex: none; }
+.ui-switch .ui-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgb(23 32 54 / .3); transition: transform .3s var(--ui-spring); }
+/* Включённое состояние видно не только цветом: галочка на дорожке и ползунок справа */
+.ui-switch input:checked + .ui-track { background: rgb(var(--switch-on)); }
+.ui-switch input:checked + .ui-track::before { content: "✓"; position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: #fff; font-size: 14px; font-weight: 900; line-height: 1; }
 .ui-switch input:checked + .ui-track::after { transform: translateX(22px); }
-.ui-switch input:focus-visible + .ui-track { outline: 3px solid rgba(79, 70, 229, .55); outline-offset: 2px; }
+.ui-switch input:focus-visible + .ui-track { outline: 3px solid rgb(var(--focus) / var(--focus-a)); outline-offset: 2px; }
 
 /* Быстрые переходы внутри кабинета */
 .ui-jump { position: sticky; top: 8px; z-index: 30; display: flex; gap: 8px; overflow-x: auto; padding: 6px; border-radius: 18px; background: var(--ui-glass); border: 1px solid var(--ui-line); box-shadow: var(--ui-shadow); scrollbar-width: none; backdrop-filter: blur(14px); }
 .ui-jump::-webkit-scrollbar { display: none; }
-.ui-jump a { flex: none; min-height: 40px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 12px; color: #34405f; font-weight: 650; font-size: .92rem; text-decoration: none; transition: background .2s, color .2s; }
-.ui-jump a:hover { background: rgba(79, 70, 229, .09); }
+.ui-jump a { flex: none; min-height: 40px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 12px; color: rgb(var(--ink-2)); font-weight: 650; font-size: .92rem; text-decoration: none; transition: background .2s, color .2s; }
+.ui-jump a:hover { background: rgb(var(--brand) / .09); }
 .ui-jump a[aria-current="true"] { background: var(--ui-brand); color: #fff; }
 section[id] { scroll-margin-top: 76px; }
 
 /* Кнопка «Поделиться» и «Следить» на карточке события */
 .ui-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
-.ui-done { border-color: #86efac !important; background: #f0fdf4 !important; color: #166534 !important; }
+.ui-done { border-color: rgb(var(--ok) / .45) !important; background: rgb(var(--ok-bg)) !important; color: rgb(var(--ok)) !important; }
 .ui-done svg { transform-origin: 50% 10%; animation: ui-ring .8s var(--ui-ease); }
 @keyframes ui-ring { 15% { transform: rotate(16deg); } 35% { transform: rotate(-14deg); } 55% { transform: rotate(9deg); } 75% { transform: rotate(-5deg); } }
 
+/* ---------- «Удобство просмотра»: тема, размер текста, контраст, интервалы, анимация ---------- */
+/* Кнопка в шапке: та же форма, что у остальных круглых кнопок шапки */
+.ui-a11y-btn {
+  display: inline-grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 14px;
+  border: 1px solid var(--ui-line); background: rgb(var(--glass) / var(--glass-hi-a)); color: rgb(var(--ink));
+  box-shadow: var(--shadow-surface); cursor: pointer;
+}
+.ui-a11y-btn:hover { background: rgb(var(--surface)); }
+.ui-a11y-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- боковые кнопки «А+» / «А−»: размер текста в один клик ---------- */
+/* Размеры в px: сама панель не растёт вместе с текстом, иначе на 150 % закрывала бы страницу */
+.ui-fontbar {
+  position: fixed; right: max(10px, env(safe-area-inset-right)); top: 50%; z-index: 45;
+  display: grid; justify-items: center; gap: 2px; padding: 5px; border-radius: 18px;
+  background: var(--ui-glass); border: 1px solid var(--ui-line); box-shadow: var(--ui-shadow);
+  backdrop-filter: blur(16px) saturate(1.6); -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  transform: translateY(-50%); font-size: 16px; letter-spacing: 0;
+}
+.ui-fontbar button {
+  display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 13px;
+  background: transparent; color: rgb(var(--ink)); font-size: 15px; font-weight: 800; line-height: 1; cursor: pointer;
+}
+.ui-fontbar .ui-big { font-size: 19px; }
+.ui-fontbar button:hover:not(:disabled) { background: rgb(var(--brand) / .1); color: var(--ui-brand-ink); }
+.ui-fontbar button:disabled { opacity: .35; cursor: default; }
+.ui-fontbar output { min-width: 40px; padding: 2px 0; text-align: center; font-size: 11px; font-weight: 750; color: rgb(var(--ink-3)); font-variant-numeric: tabular-nums; }
+/* Не мешаем шторке фильтров в Telegram, чату и печати */
+.tg.sheet-open .ui-fontbar, .chat-open .ui-fontbar { display: none; }
+@media print { .ui-fontbar { display: none; } }
+@media (max-width: 600px) { .ui-fontbar { right: 4px; padding: 3px; border-radius: 16px; } }
+
+/* Сама панель — системный диалог (фокус внутри, Esc закрывает, фон недоступен). На телефоне — шторка снизу. */
+.ui-a11y {
+  width: min(29rem, calc(100vw - 24px)); max-height: calc(100dvh - 32px); margin: auto; padding: 0; overflow: auto;
+  border: 1px solid var(--ui-line); border-radius: 26px; background: rgb(var(--glass) / var(--glass-solid-a)); color: rgb(var(--ink));
+  box-shadow: 0 30px 80px rgb(var(--scrim) / .4);
+}
+.ui-a11y[open] { animation: ui-sheet-in .32s var(--ui-ease); }
+.ui-a11y::backdrop { background: rgb(var(--scrim) / .5); backdrop-filter: blur(2px); }
+@keyframes ui-sheet-in { from { opacity: 0; transform: translateY(16px) scale(.98); } }
+@media (max-width: 600px) {
+  .ui-a11y { width: 100%; max-width: none; margin: auto 0 0; border-radius: 26px 26px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+}
+.ui-a11y form { display: grid; gap: 18px; padding: 22px; }
+.ui-a11y header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ui-a11y h2 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -.02em; }
+.ui-a11y-close { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 14px; background: rgb(var(--ink) / .06); color: rgb(var(--ink)); cursor: pointer; }
+.ui-a11y-close:hover { background: rgb(var(--ink) / .1); }
+.ui-a11y-close svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.ui-a11y fieldset { margin: 0; padding: 0; border: 0; display: grid; gap: 8px; min-width: 0; }
+.ui-a11y legend { padding: 0; margin-bottom: 8px; font-size: .76rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: rgb(var(--ink-3)); }
+.ui-a11y-hint { margin: 0; font-size: .88rem; color: rgb(var(--ink-3)); }
+
+/* Сегменты: настоящие переключатели (radio), выбор виден по заливке и по галочке, а не только по цвету */
+.ui-seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; padding: 5px; border-radius: 18px; background: rgb(var(--ink) / .06); }
+.ui-seg label { position: relative; display: grid; place-items: center; gap: 2px; min-height: 52px; padding: 6px 8px; border-radius: 14px; cursor: pointer; text-align: center; font-weight: 700; font-size: .9rem; line-height: 1.15; color: rgb(var(--ink-2)); transition: background .2s, color .2s, box-shadow .2s; }
+.ui-seg label:hover { background: rgb(var(--surface) / .7); }
+.ui-seg input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.ui-seg label:has(input:checked) { background: var(--ui-brand); color: #fff; box-shadow: 0 8px 18px rgb(var(--brand) / .3); }
+.ui-seg label:has(input:focus-visible) { outline: 3px solid rgb(var(--focus) / var(--focus-a)); outline-offset: 2px; }
+.ui-seg svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ui-seg small { font-size: .74rem; font-weight: 650; opacity: .85; }
+/* Образцы размера текста: каждая «А» показана тем размером, который включит */
+.ui-seg .ui-a { font-weight: 800; line-height: 1; }
+
+.ui-a11y .ui-switch { justify-content: space-between; width: 100%; font-weight: 650; }
+.ui-a11y .ui-switch span:first-child { display: grid; gap: 2px; }
+.ui-a11y .ui-switch small { font-size: .85rem; font-weight: 500; color: rgb(var(--ink-3)); }
+.ui-a11y footer { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; padding-top: 4px; border-top: 1px solid rgb(var(--ink) / var(--line-a)); }
+.ui-a11y-reset { min-height: 44px; padding: 8px 4px; border: 0; background: none; color: var(--ui-brand-ink); font-weight: 650; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.ui-a11y-done { min-height: 48px; padding: 0 26px; border: 0; border-radius: 16px; background: var(--ui-brand); color: #fff; font-weight: 750; box-shadow: 0 10px 24px rgb(var(--brand) / .38); cursor: pointer; }
+.ui-a11y-done:hover { background: rgb(var(--brand-hover)); }
+
+/* В режиме высокой контрастности Windows выбранный сегмент отмечаем рамкой: заливку браузер перекрасит */
+/* Различение цветов: выбранный сегмент панели отмечен галочкой, а не только заливкой */
+:root[data-cvd="on"] .ui-seg label:has(input:checked)::after { content: "✓"; position: absolute; top: 4px; right: 8px; font-size: .8rem; font-weight: 900; }
+
+@media (forced-colors: active) {
+  .ui-seg label:has(input:checked) { outline: 3px solid Highlight; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   @view-transition { navigation: none; }
-  .ui-nav, .ui-toast, .ui-rise, .ui-new, .ui-skeleton::after, .ui-nav .ui-dot, .ui-done svg { animation: none !important; }
+  .ui-nav, .ui-toast, .ui-rise, .ui-new, .ui-skeleton::after, .ui-nav .ui-dot, .ui-done svg, .ui-a11y[open] { animation: none !important; }
   .ui-nav a, .ui-nav a svg, button, .ui-switch .ui-track, .ui-switch .ui-track::after, .ui-gone { transition-duration: .01ms !important; }
   button[aria-busy="true"]::after { animation-duration: 1.6s; }
 }
+/* То же, если анимацию выключили в панели «Удобство просмотра»: всё остальное гасит общее правило в tailwind.css,
+   а индикатор загрузки оставляем медленно крутиться — иначе не видно, что идёт запрос */
+:root[data-motion="reduce"] button[aria-busy="true"]::after { animation: ui-spin 1.6s linear infinite !important; }
+:root[data-motion="reduce"]::view-transition-old(root), :root[data-motion="reduce"]::view-transition-new(root) { animation: none; }

@@ -2,6 +2,11 @@
  * Tailwind CSS для фронтенда афиши. Дизайн-токены («матовое стекло», индиго, мягкие кривые анимации) живут здесь,
  * а разметка в app/static/index.html и шаблоны в app/static/app.js используют только утилитные классы.
  * Сборка: npm run build:css (готовый app/static/tailwind.css лежит в репозитории, на сервере сборка не нужна).
+ *
+ * Цвета — CSS-переменные (каналы «R G B»), поэтому тема переключается без пересборки и без дублирования классов:
+ *   светлая — по умолчанию; тёмная — html[data-theme="dark"] или системная тёмная тема, если светлую не выбрали явно;
+ *   высокий контраст — html[data-contrast="more"] или системная настройка «повышенный контраст».
+ * Атрибуты на <html> ставит boot.js до отрисовки, выбор человек делает в панели «Удобство просмотра» (ui.js).
  */
 const plugin = require('tailwindcss/plugin');
 
@@ -19,8 +24,114 @@ const TONES = {
   other: ['#e8ebf4', '#475569'],
 };
 
+// ---- палитры тем: значения CSS-переменных ----
+// Каналы цвета без rgb(): так к ним применяются прозрачности Tailwind (bg-surface/70) и rgb(var(--brand)/.3) в разметке.
+const LIGHT = {
+  page: '238 242 251', // фон страницы под цветными пятнами
+  surface: '255 255 255', // «белый» слой: наведение, поле в фокусе, плашки
+  ink: '23 32 54', 'ink-2': '52 64 95', 'ink-3': '74 86 117', 'ink-4': '91 102 132',
+  brand: '79 70 229', 'brand-hover': '67 56 202', 'brand-ink': '55 48 163', accent: '79 70 229',
+  tint: '79 70 229', 'tint-a': '.13',
+  glass: '255 255 255', 'glass-a': '.64', 'glass-hi-a': '.82', 'glass-solid-a': '.96', 'glass-soft-a': '.4', 'glass-field-a': '.72',
+  stroke: '255 255 255', 'stroke-a': '.85', 'line-a': '.12',
+  ok: '6 95 70', 'ok-bg': '209 250 229',
+  warn: '120 53 15', 'warn-bg': '254 243 199', 'warn-line': '253 230 138',
+  bad: '155 28 28', 'bad-bg': '254 226 226',
+  shade: '52 64 120', // оттенок теней
+  scrim: '23 32 54', // затемнение под шторками
+  hl: '255 255 255', 'hl-a': '.9', // светлая кромка стекла сверху
+  focus: '79 70 229', 'focus-a': '.55',
+  'art-1': '255 217 199', 'art-2': '200 187 255', 'art-3': '169 226 255', 'art-4': '185 241 220',
+  'blob-a': '200 187 255 / .55', 'blob-b': '255 217 199 / .6',
+  spot: '255 255 255 / .5', // блик под курсором
+  toast: '23 32 54', track: '183 191 214', 'switch-on': '22 163 74',
+  'shadow-surface': '0 10px 30px rgb(52 64 120 / .14), inset 0 1px 0 rgb(255 255 255 / .9)',
+  'shadow-surface-2': '0 18px 44px rgb(52 64 120 / .22), inset 0 1px 0 rgb(255 255 255 / .9)',
+  'shadow-focus': '0 0 0 4px rgb(79 70 229 / .13)',
+  'shadow-focus-glass': '0 0 0 4px rgb(79 70 229 / .13), 0 10px 30px rgb(52 64 120 / .14), inset 0 1px 0 rgb(255 255 255 / .9)',
+};
+// Тёмная: глубокий синий фон, стекло темнее фона пятен, светлый текст. Контраст основного и вторичного текста ≥ 7:1,
+// белый текст на кнопках бренда ≥ 4.5:1.
+const DARK = {
+  page: '10 14 28',
+  surface: '38 46 78',
+  ink: '233 237 248', 'ink-2': '203 210 230', 'ink-3': '168 177 204', 'ink-4': '140 150 180',
+  brand: '99 91 245', 'brand-hover': '86 78 236', 'brand-ink': '199 210 254', accent: '165 180 252',
+  tint: '129 140 248', 'tint-a': '.2',
+  glass: '24 30 54', 'glass-a': '.72', 'glass-hi-a': '.86', 'glass-solid-a': '.97', 'glass-soft-a': '.5', 'glass-field-a': '.82',
+  stroke: '255 255 255', 'stroke-a': '.09', 'line-a': '.14',
+  ok: '110 231 183', 'ok-bg': '12 58 45',
+  warn: '252 211 77', 'warn-bg': '66 45 10', 'warn-line': '120 85 20',
+  bad: '252 165 165', 'bad-bg': '72 20 24',
+  shade: '0 0 0', scrim: '0 0 0',
+  hl: '255 255 255', 'hl-a': '.06',
+  focus: '165 180 252', 'focus-a': '.9',
+  'art-1': '76 38 70', 'art-2': '52 40 120', 'art-3': '14 58 92', 'art-4': '14 60 50',
+  'blob-a': '99 91 245 / .22', 'blob-b': '190 60 120 / .14',
+  spot: '255 255 255 / .06',
+  toast: '44 52 86', track: '74 83 117', 'switch-on': '34 160 84',
+  'shadow-surface': '0 10px 30px rgb(0 0 0 / .35), inset 0 1px 0 rgb(255 255 255 / .06)',
+  'shadow-surface-2': '0 18px 44px rgb(0 0 0 / .5), inset 0 1px 0 rgb(255 255 255 / .08)',
+  'shadow-focus': '0 0 0 4px rgb(165 180 252 / .22)',
+  'shadow-focus-glass': '0 0 0 4px rgb(165 180 252 / .22), 0 10px 30px rgb(0 0 0 / .35), inset 0 1px 0 rgb(255 255 255 / .06)',
+};
+// Высокий контраст поверх любой темы: стекло становится сплошным, вторичный текст — как основной, рамки заметные.
+const CONTRAST = {
+  'ink-3': 'var(--ink-2)', 'ink-4': 'var(--ink-2)',
+  'glass-a': '.97', 'glass-hi-a': '.98', 'glass-soft-a': '.95', 'glass-field-a': '.98',
+  stroke: 'var(--ink)', 'stroke-a': '.32', 'line-a': '.32', 'focus-a': '1',
+};
+// Различение цветов (дальтонизм): пары «зелёный — красный», которые путаются при протанопии и дейтеранопии, заменены
+// на синий и оранжевый из палитры Окабе — Ито, она различима при всех трёх видах. Цвет дублируют текст и значки,
+// а здесь он перестаёт мешать: «бесплатно» и «отменено» больше не одного тона для глаза. Контраст текста ≥ 5:1.
+const CVD_LIGHT = {
+  ok: '0 90 160', 'ok-bg': '219 234 254',
+  bad: '166 54 3', 'bad-bg': '255 230 213',
+  warn: '122 82 0', 'warn-bg': '255 244 194', 'warn-line': '240 200 80',
+  'switch-on': '0 114 178',
+};
+const CVD_DARK = {
+  ok: '125 190 255', 'ok-bg': '10 40 75',
+  bad: '255 160 110', 'bad-bg': '75 30 10',
+  warn: '250 215 90', 'warn-bg': '60 45 5', 'warn-line': '120 90 20',
+  'switch-on': '30 110 190', // белая галочка на дорожке ≥ 3:1
+};
+
+// Меньше прозрачности (системная настройка): только сплошное стекло.
+const SOLID = { 'glass-a': '.97', 'glass-hi-a': '.98', 'glass-soft-a': '.95', 'glass-field-a': '.98' };
+
+const vars = (map) => Object.fromEntries(Object.entries(map).map(([k, v]) => [`--${k}`, v]));
+const hexRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+// Плитки в тёмной теме: фон — цвет иконки на 20 % прозрачности, иконка — тот же цвет, осветлённый наполовину.
+const darkTones = Object.fromEntries(Object.entries(TONES).map(([name, [, fg]]) => {
+  const [r, g, b] = hexRgb(fg);
+  const lift = (c) => Math.round(c + (255 - c) * 0.5);
+  return [`.tone-${name}`, { '--tile-bg': `rgb(${r} ${g} ${b} / .22)`, '--tile-fg': `rgb(${lift(r)} ${lift(g)} ${lift(b)})` }];
+}));
+// Префикс к каждому селектору списка («a, b» → «P a, P b»), иначе правило утекло бы на всю страницу
+const scoped = (prefix, rules) => Object.fromEntries(Object.entries(rules).map(([sel, body]) => [
+  sel.split(',').map((one) => `${prefix} ${one.trim()}`).join(', '), body,
+]));
+
+const DARK_ON = ':root[data-theme="dark"]';
+const DARK_AUTO = ':root:not([data-theme="light"])'; // внутри @media (prefers-color-scheme: dark)
+const CONTRAST_ON = ':root[data-contrast="more"]';
+const CONTRAST_AUTO = ':root:not([data-contrast="normal"])'; // внутри @media (prefers-contrast: more)
+const MOTION_OFF = ':root[data-motion="reduce"]';
+const CVD_ON = ':root[data-cvd="on"]';
+
+const v = (name) => `rgb(var(--${name}) / <alpha-value>)`;
 const EASE = 'cubic-bezier(.22,1,.36,1)'; // мягкое торможение: быстро стартует и плавно «садится»
 const SPRING = 'cubic-bezier(.34,1.56,.64,1)';
+
+// Без анимаций: системная настройка или выбор в панели. Одни и те же правила для обоих случаев.
+const STILL = {
+  '*, *::before, *::after': { animation: 'none !important', transitionDuration: '.01ms !important', scrollBehavior: 'auto !important' },
+};
+const STILL_COMPONENTS = {
+  '.js .reveal:not(.in)': { opacity: '1', transform: 'none' },
+  '.scroll-progress::before': { display: 'none' },
+};
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -40,37 +151,41 @@ module.exports = {
         sans: ['Inter', 'system-ui', '-apple-system', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
       },
       colors: {
-        ink: { DEFAULT: '#172036', 2: '#34405f', 3: '#4a5675', 4: '#5b6684' },
-        brand: { DEFAULT: '#4f46e5', hover: '#4338ca', ink: '#3730a3', tint: 'rgba(79,70,229,.13)' },
+        page: v('page'),
+        surface: v('surface'),
+        ink: { DEFAULT: v('ink'), 2: v('ink-2'), 3: v('ink-3'), 4: v('ink-4') },
+        brand: { DEFAULT: v('brand'), hover: v('brand-hover'), ink: v('brand-ink'), tint: 'rgb(var(--tint) / var(--tint-a))' },
+        accent: v('accent'), // акцентный текст: в тёмной теме светлее, чем фон кнопок бренда
         glass: {
-          DEFAULT: 'rgba(255,255,255,.64)',
-          hi: 'rgba(255,255,255,.82)',
-          solid: 'rgba(255,255,255,.96)',
-          soft: 'rgba(255,255,255,.4)',
-          field: 'rgba(255,255,255,.72)',
+          DEFAULT: 'rgb(var(--glass) / var(--glass-a))',
+          hi: 'rgb(var(--glass) / var(--glass-hi-a))',
+          solid: 'rgb(var(--glass) / var(--glass-solid-a))',
+          soft: 'rgb(var(--glass) / var(--glass-soft-a))',
+          field: 'rgb(var(--glass) / var(--glass-field-a))',
         },
-        stroke: 'rgba(255,255,255,.85)',
-        line: 'rgba(23,32,54,.12)',
-        ok: { DEFAULT: '#065f46', bg: '#d1fae5' },
-        warn: { DEFAULT: '#78350f', bg: '#fef3c7', line: '#fde68a' },
-        bad: { DEFAULT: '#9b1c1c', bg: '#fee2e2' },
+        stroke: 'rgb(var(--stroke) / var(--stroke-a))',
+        line: 'rgb(var(--ink) / var(--line-a))',
+        ok: { DEFAULT: v('ok'), bg: v('ok-bg') },
+        warn: { DEFAULT: v('warn'), bg: v('warn-bg'), line: v('warn-line') },
+        bad: { DEFAULT: v('bad'), bg: v('bad-bg') },
       },
       borderRadius: { card: '22px', ctl: '18px', field: '14px', panel: '28px' },
       boxShadow: {
         // Названия не совпадают с цветами темы (glass, brand): иначе shadow-glass превратился бы ещё и в цвет тени.
-        surface: '0 10px 30px rgba(52,64,120,.14), inset 0 1px 0 rgba(255,255,255,.9)',
-        'surface-2': '0 18px 44px rgba(52,64,120,.22), inset 0 1px 0 rgba(255,255,255,.9)',
-        cta: '0 10px 24px rgba(79,70,229,.38)',
-        selected: '0 0 0 2px #4f46e5, 0 8px 20px rgba(79,70,229,.2)',
-        focus: '0 0 0 4px rgba(79,70,229,.13)',
+        surface: 'var(--shadow-surface)',
+        'surface-2': 'var(--shadow-surface-2)',
+        cta: '0 10px 24px rgb(var(--brand) / .38)',
+        selected: '0 0 0 2px rgb(var(--brand)), 0 8px 20px rgb(var(--brand) / .2)',
+        focus: 'var(--shadow-focus)',
+        'focus-glass': 'var(--shadow-focus-glass)', // стеклянное поле в фокусе: кольцо, тень и кромка
       },
-      // Яркий фон, сквозь который видно стекло (цвет #eef2fb задаётся отдельно: bg-[#eef2fb]).
+      // Яркий фон, сквозь который видно стекло (базовый цвет — bg-page).
       backgroundImage: {
         art: [
-          'radial-gradient(60vmax 60vmax at 8% 0%, #ffd9c7 0%, transparent 60%)',
-          'radial-gradient(55vmax 55vmax at 96% 8%, #c8bbff 0%, transparent 55%)',
-          'radial-gradient(60vmax 60vmax at 82% 100%, #a9e2ff 0%, transparent 60%)',
-          'radial-gradient(50vmax 50vmax at 0% 100%, #b9f1dc 0%, transparent 55%)',
+          'radial-gradient(60vmax 60vmax at 8% 0%, rgb(var(--art-1)) 0%, transparent 60%)',
+          'radial-gradient(55vmax 55vmax at 96% 8%, rgb(var(--art-2)) 0%, transparent 55%)',
+          'radial-gradient(60vmax 60vmax at 82% 100%, rgb(var(--art-3)) 0%, transparent 60%)',
+          'radial-gradient(50vmax 50vmax at 0% 100%, rgb(var(--art-4)) 0%, transparent 55%)',
         ].join(', '),
       },
       transitionTimingFunction: { soft: EASE, spring: SPRING },
@@ -98,7 +213,7 @@ module.exports = {
         'rise-fast': `rise .3s ${EASE} backwards`, // строка истории чата
         'rise-msg': `rise .4s ${EASE}`, // сообщение в ленте
         'rise-soft': `rise .5s ${EASE} backwards`, // кнопка «Показать ещё», панель выбранных фильтров
-        'rise-open': `rise .35s ${EASE}`, // раскрытые «Ещё фильтры»
+        'rise-open': `rise .35s ${EASE}`, // раскрывающиеся блоки
         'rise-flash': `rise .5s ${EASE}`, // счётчик «Найдено N» при каждом обновлении
         'settle-empty': `settle .7s ${EASE} backwards`,
         'settle-chip': `settle .85s ${EASE} backwards`,
@@ -122,21 +237,69 @@ module.exports = {
       addVariant('side-open', '.side-open &'); // в чате открыт список диалогов (узкий экран)
       addVariant('in-chat', '.thread &'); // карточка события внутри ленты чата
       addVariant('touch', '@media (hover: none)');
+      addVariant('big-text', ':root:is([data-text="2"], [data-text="3"]) &'); // выбран крупный текст (130 % и больше)
+
+      // ---- темы: порядок важен — тёмная после светлой, контраст после обеих ----
+      addBase({
+        ':root': { ...vars(LIGHT), colorScheme: 'light' },
+        [DARK_ON]: { ...vars(DARK), colorScheme: 'dark' },
+        '@media (prefers-color-scheme: dark)': { [DARK_AUTO]: { ...vars(DARK), colorScheme: 'dark' } },
+      });
+      addBase({
+        ...scoped(DARK_ON, darkTones),
+        '@media (prefers-color-scheme: dark)': scoped(DARK_AUTO, darkTones),
+      });
+      addBase({
+        '@media (prefers-reduced-transparency: reduce)': { ':root': vars(SOLID) },
+      });
+      addBase({
+        [CONTRAST_ON]: vars(CONTRAST),
+        '@media (prefers-contrast: more)': { [CONTRAST_AUTO]: vars(CONTRAST) },
+        // В высоком контрасте ссылки в тексте подчёркнуты: их видно не только по цвету.
+        [`${CONTRAST_ON} :is(p, li, footer) a`]: { textDecoration: 'underline' },
+      });
+      // Различение цветов: светлая палитра, тёмная (явная и системная) — после неё, поэтому перекрывает
+      addBase({
+        [CVD_ON]: vars(CVD_LIGHT),
+        [`${CVD_ON}[data-theme="dark"]`]: vars(CVD_DARK),
+        '@media (prefers-color-scheme: dark)': { [`${CVD_ON}:not([data-theme="light"])`]: vars(CVD_DARK) },
+        // Ссылки в тексте подчёркнуты, выбранные чипы отмечены галочкой: состояние читается без различения оттенков
+        [`${CVD_ON} :is(p, li, footer) a`]: { textDecoration: 'underline' },
+        [`${CVD_ON} #when-chips [aria-pressed="true"]::before, ${CVD_ON} [role="radiogroup"] label:has(> input:checked)::before`]: {
+          content: '"✓"', fontWeight: '900', marginRight: '.35em',
+        },
+      });
 
       addBase({
         // Этот ключевой кадр используется только в составном классе .scroll-progress, а не через animate-*,
         // поэтому Tailwind сам его не добавил бы.
         '@keyframes grow': { to: { transform: 'scaleX(1)' } },
         '[hidden]': { display: 'none !important' },
-        ':focus-visible': { outline: '3px solid rgba(79,70,229,.55)', outlineOffset: '2px' },
+        ':focus-visible': { outline: '3px solid rgb(var(--focus) / var(--focus-a))', outlineOffset: '2px' },
         '.chat-open body, .tg.sheet-open body': { overflow: 'hidden' },
         '.tg body': { '-webkit-tap-highlight-color': 'transparent', overscrollBehaviorY: 'none' },
+
+        // ---- размер текста: всё в интерфейсе задано в rem, поэтому растёт вместе с корнем ----
+        ':root[data-text="1"]': { fontSize: '115%' },
+        ':root[data-text="2"]': { fontSize: '130%' },
+        ':root[data-text="3"]': { fontSize: '150%' },
+
+        // ---- увеличенные интервалы (WCAG 1.4.12): легче читать при дислексии и слабом зрении ----
+        ':root[data-spacing="wide"] body, :root[data-spacing="wide"] body *': {
+          letterSpacing: '.05em !important',
+          wordSpacing: '.16em !important',
+        },
+        ':root[data-spacing="wide"] :is(p, li, dd, blockquote)': { lineHeight: '1.75 !important' },
+
         // Пользователям с «уменьшить движение» оставляем состояние без анимаций.
-        '@media (prefers-reduced-motion: reduce)': {
-          '*, *::before, *::after': {
-            animation: 'none !important',
-            transitionDuration: '.01ms !important',
-            scrollBehavior: 'auto !important',
+        '@media (prefers-reduced-motion: reduce)': STILL,
+        ...scoped(MOTION_OFF, STILL),
+
+        // Режим высокой контрастности Windows: фон кнопок браузер перекрашивает, поэтому выбранное отмечаем рамкой.
+        '@media (forced-colors: active)': {
+          '[aria-pressed="true"], [aria-checked="true"], [aria-selected="true"], label:has(> input:checked)': {
+            outline: '3px solid Highlight',
+            outlineOffset: '2px',
           },
         },
       });
@@ -177,7 +340,7 @@ module.exports = {
           borderRadius: 'inherit',
           pointerEvents: 'none',
           opacity: '0',
-          background: 'radial-gradient(260px circle at var(--mx) var(--my), rgba(255,255,255,.5), transparent 70%)',
+          background: 'radial-gradient(260px circle at var(--mx) var(--my), rgb(var(--spot)), transparent 70%)',
           transition: `opacity .5s ${EASE}`,
         },
         '@media (hover: hover)': { '.spot:hover::before': { opacity: '1' } },
@@ -211,10 +374,10 @@ module.exports = {
             animationTimeline: 'scroll(root)',
           },
         },
-        '@media (prefers-reduced-motion: reduce)': {
-          '.js .reveal:not(.in)': { opacity: '1', transform: 'none' },
-          '.scroll-progress::before': { display: 'none' },
-        },
+        '@media (prefers-reduced-motion: reduce)': STILL_COMPONENTS,
+        // Класс .js стоит на самом <html>, поэтому здесь без него; специфичность всё равно выше, чем у «.js .reveal:not(.in)»
+        [`${MOTION_OFF} .reveal:not(.in)`]: { opacity: '1', transform: 'none' },
+        [`${MOTION_OFF} .scroll-progress::before`]: { display: 'none' },
       });
 
       // ---- составные переходы: у каждого свойства своя длительность, одним утилитным классом ----

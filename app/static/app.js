@@ -8,9 +8,9 @@
   // Стили задаются утилитами Tailwind прямо в разметке; повторяющиеся наборы вынесены в константы.
   // Tailwind ищет классы в этом файле целиком, поэтому строки нельзя собирать из кусков.
   const ARROW = 'transition-transform duration-[.25s] ease-soft group-hover/btn:translate-x-1'; // стрелка в кнопке сдвигается при наведении
-  const CHIP = 'min-h-[40px] rounded-full border border-stroke bg-glass px-4 py-2 text-[.93rem] font-semibold shadow-[0_4px_14px_rgba(52,64,120,.08)] tx-chip hover:scale-[1.07] hover:bg-glass-hi hover:shadow-[0_8px_20px_rgba(52,64,120,.16)] active:scale-[.97] active:duration-[.12s]';
+  const CHIP = 'min-h-[40px] rounded-full border border-stroke bg-glass px-4 py-2 text-[.93rem] font-semibold shadow-[0_4px_14px_rgb(var(--shade)/.08)] tx-chip hover:scale-[1.07] hover:bg-glass-hi hover:shadow-[0_8px_20px_rgb(var(--shade)/.16)] active:scale-[.97] active:duration-[.12s]';
   const CHIP_REMOVABLE = `min-h-[36px] animate-pop-chip rounded-full border border-transparent bg-brand-tint px-[14px] py-[5px] text-[.93rem] font-bold text-brand-ink tx-chip after:ml-2 after:text-[.75em] after:content-['✕'] hover:scale-[1.07] active:scale-[.97] active:duration-[.12s]`;
-  const EMPTY = 'col-span-full grid animate-settle-empty justify-items-center gap-[14px] rounded-panel border border-dashed border-[rgba(79,70,229,.4)] bg-glass-soft px-4 py-12 text-center text-ink-2';
+  const EMPTY = 'col-span-full grid animate-settle-empty justify-items-center gap-[14px] rounded-panel border border-dashed border-[rgb(var(--brand)/.4)] bg-glass-soft px-4 py-12 text-center text-ink-2';
   const CHECK = 'absolute right-3 top-3 grid h-[26px] w-[26px] scale-0 place-items-center rounded-full bg-brand text-white opacity-0 [transition:transform_.35s_cubic-bezier(.34,1.56,.64,1),opacity_.15s] tg:right-2 tg:top-2 tg:h-[22px] tg:w-[22px]';
 
   const CATS = {
@@ -20,21 +20,28 @@
   };
   const WHEN_LABEL = { today: 'Сегодня', tomorrow: 'Завтра', weekend: 'Выходные', week: 'Неделя' };
   const PAGE = 12; // 12 карточек = 16 «клеток» bento (1 крупная 2×2, 1 широкая 2×1, 10 обычных): сетка из 4 колонок без дыр
-  const state = { when: '', categories: [], free: false, offset: 0, rendered: 0 };
+  const state = { when: '', categories: [], free: false, price: '', age: '', offset: 0, rendered: 0 };
   const categories = {}; // slug → название
-  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Без анимаций: системная настройка или выбор в панели «Удобство просмотра» (boot.js); выбор меняется на ходу
+  const reduceMotion = () => (window.afishaPrefs ? window.afishaPrefs.reduceMotion() : matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   const plural = (n) => (n % 10 === 1 && n % 100 !== 11 ? 'событие' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'события' : 'событий');
 
-  async function api(path, options) {
-    const response = await fetch(path, options);
-    if (!response.ok) {
-      let detail = '';
-      try { const body = await response.json(); detail = body.error && typeof body.error.message === 'string' ? body.error.message : ''; } catch (_) { /* пусто */ }
-      throw new Error(detail || `Ошибка ${response.status}`);
-    }
-    return response.json();
-  }
+  // Дата из поля ввода (ГГГГ-ММ-ДД) — местная полночь, а не UTC: иначе к западу от Гринвича она съезжает на день назад.
+  const parseDay = (iso) => new Date(`${iso}T00:00`);
+  const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  /** Цена и возраст: целое неотрицательное число в пределах, которые принимает API, иначе пусто.
+   *  Без этого «-5», «12.5» или «150 лет» возвращали ошибку 422, и вместо афиши показывалось «Не удалось загрузить». */
+  const PRICE_MAX = 1000000;
+  const AGE_MAX = 99;
+  const wholeNumber = (raw, max) => {
+    const text = String(raw ?? '').trim();
+    const n = Number(text);
+    return text === '' || !Number.isFinite(n) || n < 0 ? '' : String(Math.min(max, Math.trunc(n)));
+  };
+
+  const api = afishaApi.create(); // общий клиент: /static/api.js
 
   // ---------- движение ----------
   /** Элементы с .reveal плавно появляются, когда попадают в экран; задержка берётся из --i. */
@@ -56,7 +63,7 @@
   /** Число «накатывается» от прежнего значения к новому. */
   function countTo(el, to, suffix = '') {
     const target = Number(to);
-    if (!Number.isFinite(target) || reduceMotion) { el.textContent = `${to}${suffix}`; return; }
+    if (!Number.isFinite(target) || reduceMotion()) { el.textContent = `${to}${suffix}`; return; }
     const from = Number(el.dataset.v || 0);
     el.dataset.v = target;
     const start = performance.now();
@@ -96,10 +103,12 @@
 
   const BADGE = 'rounded-full px-[10px] py-[3px] text-[.76rem] font-[750]';
   const BADGE_TONE = { free: 'bg-ok-bg text-ok', cancelled: 'bg-bad-bg text-bad', rescheduled: 'bg-warn-bg text-warn', sold_out: 'bg-warn-bg text-warn', demo: 'bg-warn-bg text-warn' };
-  const badge = (kind, text, attrs = '') => `<span class="${BADGE} ${BADGE_TONE[kind] || 'bg-brand-tint text-brand-ink'}"${attrs}>${text}</span>`;
+  // У каждого статуса свой значок: отмену и бесплатный вход видно по форме, а не только по цвету (дальтонизм)
+  const BADGE_ICON = { free: 'gift', cancelled: 'x', rescheduled: 'alert', sold_out: 'alert', demo: 'info' };
+  const badge = (kind, text, attrs = '') => `<span class="${BADGE} inline-flex items-center gap-1 ${BADGE_TONE[kind] || 'bg-brand-tint text-brand-ink'}"${attrs}>${BADGE_ICON[kind] ? icon(BADGE_ICON[kind], 'h-[13px] w-[13px] [stroke-width:2.4]') : ''}${text}</span>`;
 
   // Карточка: обычная, крупная (feature: 2×2) или широкая (wide: 2×1). В мини-приложении Telegram она становится строкой.
-  const CARD = 'group/card spot relative flex min-w-0 flex-col overflow-hidden rounded-card border border-stroke bg-glass shadow-surface tx-glass hover:z-[3] hover:-translate-y-[6px] hover:scale-[1.035] hover:bg-white/80 hover:shadow-surface-2 has-[h3_a:focus-visible]:outline has-[h3_a:focus-visible]:outline-[3px] has-[h3_a:focus-visible]:outline-offset-[3px] has-[h3_a:focus-visible]:outline-[rgba(79,70,229,.55)] tg:rounded-[20px] tg:hover:translate-y-0 tg:hover:scale-100 tg:hover:shadow-surface tg:active:scale-[.985] tg:in-chat:block';
+  const CARD = 'group/card spot relative flex min-w-0 flex-col overflow-hidden rounded-card border border-stroke bg-glass shadow-surface tx-glass hover:z-[3] hover:-translate-y-[6px] hover:scale-[1.035] hover:bg-surface/80 hover:shadow-surface-2 has-[h3_a:focus-visible]:outline has-[h3_a:focus-visible]:outline-[3px] has-[h3_a:focus-visible]:outline-offset-[3px] has-[h3_a:focus-visible]:outline-[rgb(var(--focus)/var(--focus-a))] tg:rounded-[20px] tg:hover:translate-y-0 tg:hover:scale-100 tg:hover:shadow-surface tg:active:scale-[.985] tg:in-chat:block';
   const CARD_KIND = {
     feature: 'col-span-2 row-span-2 w600:col-auto w600:row-auto tg:col-auto tg:row-auto tg:flex tg:flex-col',
     wide: 'col-span-2 w600:col-auto tg:col-auto tg:grid tg:grid-cols-[104px_minmax(0,1fr)]',
@@ -123,7 +132,7 @@
     '': 'text-[1.12rem] font-bold leading-[1.28] tracking-[-.015em] [overflow-wrap:anywhere] tg:text-[1.02rem]',
   };
   const PILL = 'rounded-full border px-3 py-[3px] text-[.85rem] tg:px-[10px] tg:py-[2px] tg:text-[.8rem]'; // тон добавляется отдельно
-  const PILL_TONE = { plain: 'border-stroke bg-white/[.78] font-semibold text-ink-2', price: 'border-stroke bg-white/[.78] font-[750] text-brand-ink', verified: 'border-transparent bg-ok-bg font-semibold text-ok' };
+  const PILL_TONE = { plain: 'border-stroke bg-surface/[.78] font-semibold text-ink-2', price: 'border-stroke bg-surface/[.78] font-[750] text-brand-ink', verified: 'border-transparent bg-ok-bg font-semibold text-ok' };
 
   function cardHtml(event, cls = '', index = 0, animate = true) {
     const image = safeUrl(event.image_url);
@@ -160,14 +169,19 @@
   // Заглушка на время загрузки: повторяет раскладку карточки.
   const skeletonHtml = (cls) => {
     const kind = cls in CARD_KIND ? cls : '';
-    const line = 'mx-[18px] mt-3 h-[14px] rounded-lg bg-[rgba(23,32,54,.08)]';
-    return `<div class="relative flex min-h-[250px] min-w-0 animate-fade-in flex-col overflow-hidden rounded-card border border-stroke bg-glass shadow-surface pointer-events-none after:absolute after:inset-0 after:-translate-x-full after:animate-sweep after:bg-[linear-gradient(100deg,transparent_30%,rgba(255,255,255,.7)_50%,transparent_70%)] after:content-[''] [&:nth-child(2n)]:[animation-delay:.07s] [&:nth-child(3n)]:[animation-delay:.14s] tg:block tg:min-h-[112px] tg:rounded-[20px] ${kind === 'feature' ? 'col-span-2 row-span-2 w600:col-auto w600:row-auto tg:col-auto tg:row-auto' : kind === 'wide' ? 'col-span-2 w600:col-auto tg:col-auto' : ''}" aria-hidden="true"><div class="relative grid place-items-center overflow-hidden bg-white/50 ${MEDIA_KIND[kind]} tg:hidden"></div><div class="${line}"></div><div class="${line} w-[55%]"></div><div class="${line}"></div></div>`;
+    const line = 'mx-[18px] mt-3 h-[14px] rounded-lg bg-[rgb(var(--ink)/.08)]';
+    return `<div class="relative flex min-h-[250px] min-w-0 animate-fade-in flex-col overflow-hidden rounded-card border border-stroke bg-glass shadow-surface pointer-events-none after:absolute after:inset-0 after:-translate-x-full after:animate-sweep after:bg-[linear-gradient(100deg,transparent_30%,rgb(var(--hl)/var(--hl-a))_50%,transparent_70%)] after:content-[''] [&:nth-child(2n)]:[animation-delay:.07s] [&:nth-child(3n)]:[animation-delay:.14s] tg:block tg:min-h-[112px] tg:rounded-[20px] ${kind === 'feature' ? 'col-span-2 row-span-2 w600:col-auto w600:row-auto tg:col-auto tg:row-auto' : kind === 'wide' ? 'col-span-2 w600:col-auto tg:col-auto' : ''}" aria-hidden="true"><div class="relative grid place-items-center overflow-hidden bg-surface/50 ${MEDIA_KIND[kind]} tg:hidden"></div><div class="${line}"></div><div class="${line} w-[55%]"></div><div class="${line}"></div></div>`;
   };
 
   // Если картинка не загрузилась, остаётся плитка с иконкой категории.
   document.addEventListener('error', (e) => { if (e.target.tagName === 'IMG') e.target.remove(); }, true);
 
   // ---------- фильтры ----------
+  // Бюджет и возраст хранятся в state; чипы-переключатели и поле «своя сумма» только показывают и меняют это значение.
+  const priceRadios = () => document.querySelectorAll('input[name="price"]');
+  const ageRadios = () => document.querySelectorAll('input[name="age"]');
+  const isPresetPrice = (value) => [...priceRadios()].some((r) => r.value === value);
+
   function filterParams() {
     const params = new URLSearchParams();
     const set = (key, value) => { if (value !== '' && value !== false && value != null) params.set(key, value); };
@@ -177,8 +191,8 @@
     set('q', $('#f-q').value.trim());
     set('city', $('#f-city').value);
     set('venue', $('#f-venue').value.trim());
-    set('price_max', $('#f-price').value);
-    set('age', $('#f-age').value);
+    set('price_max', state.price);
+    set('age', state.age);
     if (state.free) params.set('free', 'true');
     if ($('#f-kids').checked) params.set('kids', 'true');
     if ($('#f-cancelled').checked) params.set('status', 'all');
@@ -197,38 +211,70 @@
     state.when = WHEN_LABEL[p.get('when')] ? p.get('when') : '';
     state.categories = (p.get('category') || '').split(',').filter(Boolean);
     state.free = p.get('free') === 'true';
+    state.price = wholeNumber(p.get('price_max'), PRICE_MAX);
+    state.age = wholeNumber(p.get('age'), AGE_MAX);
     $('#f-q').value = p.get('q') || '';
     $('#f-city').value = p.get('city') || '';
     $('#f-venue').value = p.get('venue') || '';
-    $('#f-price').value = p.get('price_max') || '';
-    $('#f-age').value = p.get('age') || '';
     $('#f-date').value = p.get('date_from') && p.get('date_from') === p.get('date_to') ? p.get('date_from') : '';
     $('#f-kids').checked = p.get('kids') === 'true';
     $('#f-cancelled').checked = p.get('status') === 'all';
     $('#f-sort').value = p.get('sort') === 'price' ? 'price' : 'date';
-    if ($('#f-date').value || $('#f-price').value || $('#f-age').value || $('#f-venue').value || $('#f-kids').checked || $('#f-cancelled').checked) {
-      $('#more-filters').open = true;
-    }
+  }
+
+  /** На узком экране ряды чипов — ленты с прокруткой: выбранный чип докручиваем в зону видимости. */
+  function keepInView(row, chip) {
+    if (!chip || row.scrollWidth <= row.clientWidth) return;
+    // offsetLeft, а не getBoundingClientRect: на анимацию появления (scale) замер не реагирует
+    const left = chip.offsetLeft - row.offsetLeft;
+    const right = left + chip.offsetWidth;
+    const view = row.scrollLeft;
+    const to = left < view ? left - 16 : right > view + row.clientWidth ? right - row.clientWidth + 16 : null;
+    if (to === null) return;
+    // Плавно — только если лента на экране: вне экрана браузер плавную прокрутку не выполняет вовсе (ссылка с датой)
+    const box = row.getBoundingClientRect();
+    const seen = box.bottom > 0 && box.top < innerHeight;
+    row.scrollTo({ left: Math.max(0, to), behavior: seen && !reduceMotion() ? 'smooth' : 'auto' });
   }
 
   function syncChips() {
     $('#when-chips').querySelectorAll('[data-when]').forEach((el) => el.setAttribute('aria-pressed', String(!$('#f-date').value && el.dataset.when === state.when)));
     $('#category-chips').querySelectorAll('[data-category]').forEach((el) => el.setAttribute('aria-pressed', String(state.categories.includes(el.dataset.category))));
     $('#free-card').setAttribute('aria-checked', String(state.free));
+    // Чип «Выбрать дату» показывает выбранный день и нажат, пока он действует.
+    const day = $('#f-date').value;
+    const pick = $('#pick-date');
+    pick.setAttribute('aria-pressed', String(Boolean(day)));
+    $('#pick-date-label').textContent = day ? dayFmt.format(parseDay(day)) : 'Выбрать дату';
+    if (day) pick.setAttribute('aria-label', `Дата: ${dayFmt.format(parseDay(day))}. Изменить`);
+    else pick.removeAttribute('aria-label');
+    // Бюджет: готовая сумма отмечена чипом, любая другая стоит в поле «своя» (пока человек в нём печатает, поле не трогаем).
+    priceRadios().forEach((r) => { r.checked = r.value === state.price; });
+    const custom = $('#f-price');
+    if (document.activeElement !== custom) custom.value = isPresetPrice(state.price) ? '' : state.price;
+    ageRadios().forEach((r) => { r.checked = r.value === state.age; });
+    // Город и порядок: видимый текст сегмента (сам список прозрачный и лежит поверх)
+    $('#f-city-text').textContent = $('#f-city').value || 'Все города';
+    $('#f-sort-text').textContent = $('#f-sort').selectedOptions[0]?.textContent || '';
+    keepInView($('#when-chips'), $('#when-chips [aria-pressed="true"]'));
+    const priceOn = [...priceRadios()].find((r) => r.checked);
+    keepInView($('#price-chips'), priceOn ? priceOn.closest('label') : custom.closest('label'));
+    const ageOn = [...ageRadios()].find((r) => r.checked);
+    if (ageOn) keepInView($('#age-chips'), ageOn.closest('label'));
   }
 
   /** Выбранные условия чипами с крестиком: видно, почему показано именно это, и каждое снимается одним касанием. */
   function activeFilters() {
     const list = [];
     const add = (label, clear) => list.push({ label, clear });
-    if ($('#f-date').value) add(`Дата: ${shortFmt.format(new Date($('#f-date').value))}`, () => { $('#f-date').value = ''; });
+    if ($('#f-date').value) add(`Дата: ${shortFmt.format(parseDay($('#f-date').value))}`, () => { $('#f-date').value = ''; });
     else if (state.when) add(WHEN_LABEL[state.when], () => { state.when = ''; });
     state.categories.forEach((slug) => add(categories[slug] || slug, () => { state.categories = state.categories.filter((s) => s !== slug); }));
     if ($('#f-q').value.trim()) add(`«${$('#f-q').value.trim()}»`, () => { $('#f-q').value = ''; });
     if ($('#f-city').value) add($('#f-city').value, () => { $('#f-city').value = ''; });
     if ($('#f-venue').value.trim()) add(`Площадка: ${$('#f-venue').value.trim()}`, () => { $('#f-venue').value = ''; });
-    if ($('#f-price').value) add(`до ${$('#f-price').value} ₽`, () => { $('#f-price').value = ''; });
-    if ($('#f-age').value) add(`${$('#f-age').value}+ лет`, () => { $('#f-age').value = ''; });
+    if (state.price) add(`до ${state.price} ₽`, () => { state.price = ''; });
+    if (state.age) add(`Возраст до ${state.age}+`, () => { state.age = ''; });
     if (state.free) add('Бесплатно', () => { state.free = false; });
     if ($('#f-kids').checked) add('Детям и семьям', () => { $('#f-kids').checked = false; });
     if ($('#f-cancelled').checked) add('С отменёнными', () => { $('#f-cancelled').checked = false; });
@@ -238,20 +284,22 @@
   let currentActive = [];
   function renderActive() {
     currentActive = activeFilters();
-    $('#active-bar').hidden = currentActive.length === 0;
+    const none = currentActive.length === 0;
+    $('#active-empty').hidden = !none;
+    $('#f-reset').hidden = none;
     const badge = $('#tg-count');
     badge.textContent = currentActive.length;
-    badge.hidden = currentActive.length === 0;
+    badge.hidden = none;
     $('#active-filters').innerHTML = currentActive
       .map((f, i) => `<button type="button" class="${CHIP_REMOVABLE}" data-i="${i}" aria-label="Убрать: ${esc(f.label)}">${esc(f.label)}</button>`)
       .join('');
   }
 
   function resetAll() {
-    ['f-q', 'f-date', 'f-price', 'f-age', 'f-venue'].forEach((id) => { $('#' + id).value = ''; });
+    ['f-q', 'f-date', 'f-price', 'f-venue'].forEach((id) => { $('#' + id).value = ''; });
     $('#f-city').value = '';
     ['f-kids', 'f-cancelled'].forEach((id) => { $('#' + id).checked = false; });
-    state.when = ''; state.categories = []; state.free = false;
+    state.when = ''; state.categories = []; state.free = false; state.price = ''; state.age = '';
     load();
   }
 
@@ -275,10 +323,13 @@
   matchMedia('(max-width: 1000px)').addEventListener('change', layoutCats);
 
   // ---------- каталог ----------
+  // Пустая выдача — не тупик: кнопка предлагает сбросить условия. Неактивна, только если условий нет вовсе.
   function updateCta(total) {
     const cta = $('#cta');
-    cta.disabled = !total;
-    cta.innerHTML = total ? `Показать ${Number(total) || 0} ${plural(total)} ${icon('arrow', ARROW)}` : 'Нет событий по этим условиям';
+    const canReset = currentActive.length > 0;
+    cta.disabled = !total && !canReset;
+    cta.innerHTML = total ? `Показать ${Number(total) || 0} ${plural(total)} ${icon('arrow', ARROW)}`
+      : canReset ? 'Ничего не нашлось · сбросить фильтры' : 'Пока нет событий';
     updateMainButton(total);
   }
 
@@ -293,6 +344,10 @@
     params.set('limit', PAGE);
     params.set('offset', state.offset);
     const results = $('#results');
+    const cta = $('#cta');
+    // Пока считаем заново, старое «Показать N» вводит в заблуждение: кнопка показывает загрузку.
+    // Задержка, чтобы на быстром ответе она не мигала.
+    const busyTimer = append ? 0 : setTimeout(() => { if (seq === loadSeq) cta.setAttribute('aria-busy', 'true'); }, 250);
     if (!append) {
       results.setAttribute('aria-busy', 'true');
       // Уже есть карточки: просто приглушаем их, пока идёт запрос; заглушки нужны только при первой загрузке.
@@ -323,11 +378,12 @@
         <button type="button" class="${CHIP}" id="retry">Повторить</button></div>`;
       $('#more').hidden = true;
     } finally {
-      if (seq === loadSeq) { results.removeAttribute('aria-busy'); results.classList.remove('dim'); }
+      clearTimeout(busyTimer);
+      if (seq === loadSeq) { results.removeAttribute('aria-busy'); results.classList.remove('dim'); cta.removeAttribute('aria-busy'); }
     }
   }
 
-  const goTo = (selector) => $(selector).scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+  const goTo = (selector) => $(selector).scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
 
   async function loadMeta() {
     let meta;
@@ -340,10 +396,10 @@
     grid.innerHTML = meta.categories
       .filter((c) => c.count > 0)
       .sort((a, b) => b.count - a.count)
-      .map((c, i) => `<button type="button" class="reveal spot group/cat tone-${esc(c.slug)} relative flex min-h-[124px] min-w-0 flex-col gap-1 rounded-card border border-stroke bg-glass p-4 text-left shadow-surface tx-glass aria-pressed:border-transparent aria-pressed:bg-glass-hi aria-pressed:shadow-selected hover:z-[2] hover:-translate-y-1 hover:scale-[1.04] hover:bg-white/80 hover:shadow-surface-2 active:translate-y-0 active:scale-[1.01] active:duration-[.15s] tg:!col-auto tg:!row-auto tg:min-h-[112px] tg:w-[134px] tg:flex-none tg:snap-start tg:p-3" style="--i:${i % 5}" data-category="${esc(c.slug)}" aria-pressed="false">
+      .map((c, i) => `<button type="button" class="reveal spot group/cat tone-${esc(c.slug)} relative flex min-h-[124px] min-w-0 flex-col gap-1 rounded-card border border-stroke bg-glass p-4 text-left shadow-surface tx-glass aria-pressed:border-transparent aria-pressed:bg-glass-hi aria-pressed:shadow-selected hover:z-[2] hover:-translate-y-1 hover:scale-[1.04] hover:bg-surface/80 hover:shadow-surface-2 active:translate-y-0 active:scale-[1.01] active:duration-[.15s] tg:!col-auto tg:!row-auto tg:min-h-[112px] tg:w-[134px] tg:flex-none tg:snap-start tg:p-3" style="--i:${i % 5}" data-category="${esc(c.slug)}" aria-pressed="false">
           <span class="${CHECK} group-aria-pressed/cat:scale-100 group-aria-pressed/cat:opacity-100" aria-hidden="true">${icon('check', 'h-[15px] w-[15px] [stroke-width:2.8]')}</span>
           <span class="mb-auto grid h-12 w-12 flex-none place-items-center rounded-field bg-[var(--tile-bg)] text-[var(--tile-fg)] transition-transform duration-[.35s] ease-spring group-aria-pressed/cat:-rotate-[6deg] group-aria-pressed/cat:scale-[1.1] group-hover/cat:-rotate-[6deg] group-hover/cat:scale-[1.06] group-[.big]/cat:h-[60px] group-[.big]/cat:w-[60px] group-[.big]/cat:rounded-[18px] tg:h-10 tg:w-10 tg:rounded-[12px] tg:group-[.big]/cat:h-10 tg:group-[.big]/cat:w-10 tg:group-[.big]/cat:rounded-[12px]">${icon(c.slug in CATS ? c.slug : 'other', 'h-6 w-6 group-[.big]/cat:h-[30px] group-[.big]/cat:w-[30px] tg:group-[.big]/cat:h-6 tg:group-[.big]/cat:w-6')}</span>
-          <span class="mt-3 flex items-baseline gap-2 text-[1.02rem] font-bold leading-[1.25] group-[.big]/cat:text-[1.6rem] group-[.big]/cat:font-extrabold group-[.big]/cat:tracking-[-.025em] w600:group-[.big]/cat:text-[1.3rem] tg:mt-2 tg:flex-wrap tg:gap-x-[6px] tg:gap-y-[2px] tg:text-[1rem] tg:tracking-normal tg:group-[.big]/cat:text-[1rem] tg:group-[.big]/cat:tracking-normal">${esc(c.label)}<span class="rounded-full bg-white/75 px-2 py-px text-[.78rem] font-bold text-ink-2">${Number(c.count) || 0}</span></span>
+          <span class="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[1.02rem] [overflow-wrap:anywhere] hyphens-auto font-bold leading-[1.25] group-[.big]/cat:text-[1.6rem] group-[.big]/cat:font-extrabold group-[.big]/cat:tracking-[-.025em] w600:group-[.big]/cat:text-[1.3rem] tg:mt-2 tg:flex-wrap tg:gap-x-[6px] tg:gap-y-[2px] tg:text-[1rem] tg:tracking-normal tg:group-[.big]/cat:text-[1rem] tg:group-[.big]/cat:tracking-normal">${esc(c.label)}<span class="rounded-full bg-surface/75 px-2 py-px text-[.78rem] font-bold text-ink-2">${Number(c.count) || 0}</span></span>
           <span class="text-[.88rem] leading-[1.35] text-ink-3 tg:hidden">${esc(CATS[c.slug] || '')}</span>
         </button>`).join('');
     layoutCats();
@@ -378,8 +434,11 @@
     document.documentElement.classList.add('tg');
     tg.ready();
     tg.expand();
-    try { tg.setHeaderColor('#eef2fb'); tg.setBackgroundColor('#eef2fb'); } catch (_) { /* старые клиенты */ }
-    tg.MainButton.setParams({ color: '#4f46e5', text_color: '#ffffff' });
+    if (window.afishaPrefs) window.afishaPrefs.setTelegramScheme(tg.colorScheme);
+    paintTelegram();
+    // Человек сменил тему в Telegram или в панели «Удобство просмотра»: перекрашиваем шапку и главную кнопку
+    tg.onEvent('themeChanged', () => { if (window.afishaPrefs) window.afishaPrefs.setTelegramScheme(tg.colorScheme); paintTelegram(); });
+    window.addEventListener('afisha:prefs', paintTelegram);
     // Главная кнопка Telegram работает только вместе со шторкой: «Показать N событий» закрывает её и ведёт к списку.
     tg.MainButton.onClick(() => { closeSheet(); goTo('#results-section'); });
     tg.BackButton.onClick(handleBack);
@@ -389,6 +448,18 @@
       const link = e.target.closest('a[href^="http"]');
       if (link && !link.href.startsWith(location.origin)) { e.preventDefault(); tg.openLink(link.href); }
     });
+  }
+  /** Цвета шапки, фона и главной кнопки Telegram берём из текущей темы страницы (переменные --page и --brand). */
+  function paintTelegram() {
+    if (!tg) return;
+    const css = getComputedStyle(document.documentElement);
+    const hex = (name, fallback) => {
+      const parts = css.getPropertyValue(name).trim().split(/\s+/).map(Number);
+      return parts.length === 3 && parts.every(Number.isFinite) ? `#${parts.map((n) => n.toString(16).padStart(2, '0')).join('')}` : fallback;
+    };
+    const page = hex('--page', '#eef2fb');
+    try { tg.setHeaderColor(page); tg.setBackgroundColor(page); } catch (_) { /* старые клиенты */ }
+    tg.MainButton.setParams({ color: hex('--brand', '#4f46e5'), text_color: '#ffffff' });
   }
   // ---------- подписка на новые события ----------
   /** В Telegram: кнопка создаёт подписку через API (подпись Mini App доказывает, чей это чат). В браузере: подсказка про бота. */
@@ -518,7 +589,7 @@
     list.innerHTML = html;
   }
 
-  const AVATAR = 'grid h-8 w-8 flex-none place-items-center rounded-[11px] border border-stroke bg-glass-hi text-brand';
+  const AVATAR = 'grid h-8 w-8 flex-none place-items-center rounded-[11px] border border-stroke bg-glass-hi text-accent';
   const MSG = 'flex animate-rise-msg gap-3';
   const DOT = 'h-2 w-2 animate-dot rounded-full bg-brand';
   const typingHtml = `<div class="${MSG}"><span class="${AVATAR}" aria-hidden="true">${icon('chat', 'h-[18px] w-[18px]')}</span><div class="grid min-w-0 flex-1 content-start gap-[10px]"><span class="inline-flex gap-[5px] px-[2px] py-2" role="status" aria-label="Подбираю"><span class="${DOT}"></span><span class="${DOT} [animation-delay:.15s]"></span><span class="${DOT} [animation-delay:.3s]"></span></span></div></div>`;
@@ -534,7 +605,7 @@
   const TRACE_LINK = 'font-semibold text-brand-ink underline-offset-2 hover:underline';
   const ACT_BTN = 'inline-flex min-h-[44px] items-center rounded-field px-[18px] text-[.95rem] font-bold tx-btn active:scale-[.97]';
   const ACT_OK = `${ACT_BTN} bg-brand text-white shadow-cta hover:bg-brand-hover`;
-  const ACT_NO = `${ACT_BTN} border border-stroke bg-glass-hi hover:bg-white`;
+  const ACT_NO = `${ACT_BTN} border border-stroke bg-glass-hi hover:bg-surface`;
 
   /** Действие, которое предложил агент: данные меняются только после нажатия «Подтвердить». */
   function actionHtml(a) {
@@ -545,7 +616,7 @@
   }
 
   function messageHtml(m) {
-    if (m.role === 'user') return `<div class="${MSG} justify-end"><div class="max-w-[86%] origin-bottom-right animate-bubble-in whitespace-pre-wrap rounded-[20px] rounded-br-[6px] bg-brand px-4 py-3 text-white shadow-[0_8px_20px_rgba(79,70,229,.25)] [overflow-wrap:anywhere]">${esc(m.content)}</div></div>`;
+    if (m.role === 'user') return `<div class="${MSG} justify-end"><div class="max-w-[86%] origin-bottom-right animate-bubble-in whitespace-pre-wrap rounded-[20px] rounded-br-[6px] bg-brand px-4 py-3 text-white shadow-[0_8px_20px_rgb(var(--brand)/.25)] [overflow-wrap:anywhere]">${esc(m.content)}</div></div>`;
     // в истории могли остаться ответы старого провайдера: показываем только Gemini, остальные подписываем нейтрально
     const tag = m.mode === 'llm' ? `Подбор сделал ИИ-агент${{gemini: ' · Gemini', groq: ' · Groq'}[m.provider] || ''}` : m.mode === 'rules' ? 'Режим без ИИ: разбор запроса по правилам' : '';
     const cards = m.events && m.events.length ? `<div class="grid auto-rows-auto grid-flow-dense grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 tg:grid-cols-1">${m.events.map((e, i) => cardHtml(e, '', i, false)).join('')}</div>` : '';
@@ -558,7 +629,7 @@
 
   function scrollThread() {
     const thread = $('#thread');
-    thread.scrollTo({ top: thread.scrollHeight, behavior: reduceMotion ? 'auto' : 'smooth' });
+    thread.scrollTo({ top: thread.scrollHeight, behavior: reduceMotion() ? 'auto' : 'smooth' });
   }
 
   function renderThread() {
@@ -628,11 +699,7 @@
     $('#send').disabled = true;
     saveChats(); renderList(); renderThread();
     try {
-      const data = await api('/api/v1/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history, context_event_ids }),
-      });
+      const data = await api.post('/api/v1/ask', { message: text, history, context_event_ids });
       chat.messages.push({
         role: 'assistant', content: data.reply, events: data.events, mode: data.mode, provider: data.provider, ts: Date.now(),
         trace_id: HEX32.test(data.trace_id || '') ? data.trace_id : '',
@@ -671,7 +738,7 @@
     action.result = 'Выполняю…';
     renderThread();
     try {
-      const data = await api(`/api/v1/agent/actions/${encodeURIComponent(id)}/${confirm ? 'confirm' : 'cancel'}`, { method: 'POST' });
+      const data = await api.post(`/api/v1/agent/actions/${encodeURIComponent(id)}/${confirm ? 'confirm' : 'cancel'}`);
       action.state = data.ok ? 'done' : 'failed';
       action.result = String(data.message || '');
     } catch (error) {
@@ -755,13 +822,65 @@
     if (e.target.closest('#empty-reset')) resetAll();
     if (e.target.closest('#retry')) load();
   });
+  $('#f-date').min = isoDay(new Date()); // прошедшие дни в календаре не предлагаем
   $('#f-date').addEventListener('change', () => { if ($('#f-date').value) state.when = ''; load(); });
-  ['f-city', 'f-price', 'f-age', 'f-venue', 'f-kids', 'f-cancelled', 'f-sort'].forEach((id) => $('#' + id).addEventListener('change', () => load()));
+  ['f-city', 'f-kids', 'f-cancelled', 'f-sort'].forEach((id) => $('#' + id).addEventListener('change', () => { haptic(); load(); }));
+
+  /** Чип «Выбрать дату» открывает системный календарь у самого чипа. Где браузер так не умеет
+   *  (старый Safari, Telegram Web во фрейме), вместо чипа показывается обычное поле даты. */
+  $('#pick-date').addEventListener('click', () => {
+    haptic();
+    const input = $('#f-date');
+    try {
+      input.showPicker();
+    } catch (_) {
+      $('#date-wrap').dataset.fallback = '';
+      input.tabIndex = 0;
+      input.focus();
+    }
+  });
+
+  // Бюджет и возраст: чип выбирается одним касанием (с клавиатуры — стрелками, это обычная группа переключателей)
+  $('#price-chips').addEventListener('change', (e) => {
+    if (e.target.name !== 'price') return;
+    haptic();
+    state.price = e.target.value;
+    $('#f-price').value = '';
+    load();
+  });
+  $('#age-chips').addEventListener('change', (e) => {
+    if (e.target.name !== 'age') return;
+    haptic();
+    state.age = e.target.value;
+    load();
+  });
+
+  /** Список под фильтрами: в мини-приложении закрываем шторку, на телефоне прячем клавиатуру. */
+  function showResults() {
+    if (isTouch && document.activeElement) document.activeElement.blur();
+    closeSheet();
+    goTo('#results-section');
+  }
+
+  // Поля с вводом текста: счётчик на кнопке обновляется по ходу набора, а не только после ухода из поля.
   let timer;
-  $('#f-q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => load(), 300); });
+  const loadSoon = () => { clearTimeout(timer); timer = setTimeout(() => load(), 300); };
+  ['f-q', 'f-venue'].forEach((id) => $('#' + id).addEventListener('input', loadSoon));
+  // Своя сумма: ищем по числу, которое примет API (150.7 → 150); после ухода из поля оно в нём и остаётся
+  $('#f-price').addEventListener('input', () => { state.price = wholeNumber($('#f-price').value, PRICE_MAX); loadSoon(); });
+  $('#f-price').addEventListener('change', () => syncChips());
+  // Enter в поиске и своей сумме: применить сразу и показать список. В «Площадке» Enter выбирает подсказку, его не трогаем.
+  ['f-q', 'f-price'].forEach((id) => $('#' + id).addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    e.preventDefault();
+    clearTimeout(timer);
+    e.target.blur();
+    load();
+    showResults();
+  }));
   $('#more').addEventListener('click', () => load(true));
   $('#f-reset').addEventListener('click', resetAll);
-  $('#cta').addEventListener('click', () => goTo('#results-section'));
+  $('#cta').addEventListener('click', () => (lastTotal === 0 ? resetAll() : goTo('#results-section')));
 
   // Плитки-счётчики в hero — быстрые фильтры.
   const quick = (apply) => () => { apply(); load(); goTo('#filters'); };
@@ -771,9 +890,9 @@
   $('#stat-cities').addEventListener('click', () => { goTo('#filters'); $('#f-city').focus({ preventScroll: true }); });
 
   // Стеклянные плитки подсвечиваются под курсором, шапка «оседает» при прокрутке.
-  if (!reduceMotion) {
+  {
     document.addEventListener('pointermove', (e) => {
-      if (e.pointerType === 'touch') return;
+      if (e.pointerType === 'touch' || reduceMotion()) return;
       const el = e.target.closest && e.target.closest('.spot');
       if (!el) return;
       const box = el.getBoundingClientRect();

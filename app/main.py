@@ -117,9 +117,23 @@ def metrics_endpoint(request: Request, session: SessionDep) -> PlainTextResponse
 
 # ---------- веб-интерфейс и виджет ----------
 
+# Страницы и их скрипты всегда сверяются с сервером: при неизменном файле это короткий ответ 304 по ETag,
+# а после обновления сайта браузер сразу берёт новую версию, а не держит старый ui.js рядом с новой разметкой.
+NO_CACHE = {"Cache-Control": "no-cache"}
+
+
+class RevalidatedStatic(StaticFiles):
+    """Статика с Cache-Control: no-cache. Без заголовка браузер сам решает, сколько хранить файл, и показывает старое."""
+
+    async def get_response(self, path: str, scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
+
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC_DIR / "index.html", headers=NO_CACHE)
 
 
 @app.get("/event/{event_id}", include_in_schema=False)
@@ -161,12 +175,12 @@ def plan_page(request: Request, session: SessionDep) -> Response:
 @app.get("/admin", include_in_schema=False)
 def admin_page() -> FileResponse:
     """Интерфейс модератора. Данные открываются только по ключу, сама страница не индексируется."""
-    return FileResponse(STATIC_DIR / "admin.html", headers={"X-Robots-Tag": "noindex, nofollow"})
+    return FileResponse(STATIC_DIR / "admin.html", headers={"X-Robots-Tag": "noindex, nofollow", **NO_CACHE})
 
 
 @app.get("/feedback", include_in_schema=False)
 def feedback_page() -> FileResponse:
-    return FileResponse(STATIC_DIR / "feedback.html")
+    return FileResponse(STATIC_DIR / "feedback.html", headers=NO_CACHE)
 
 
 @app.get("/trace/{trace_id}", include_in_schema=False)
@@ -190,7 +204,7 @@ def widget_js() -> FileResponse:
 
 @app.get("/widget-demo", include_in_schema=False)
 def widget_demo() -> FileResponse:
-    return FileResponse(STATIC_DIR / "widget-demo.html")
+    return FileResponse(STATIC_DIR / "widget-demo.html", headers=NO_CACHE)
 
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/static", RevalidatedStatic(directory=STATIC_DIR), name="static")

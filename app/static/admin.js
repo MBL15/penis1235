@@ -9,7 +9,7 @@
   const ACTIONS = { create: 'создание', update: 'обновление', merge: 'слияние источников', status: 'статус', publication: 'публикация', edit: 'правка', delete: 'удаление', feedback: 'обращение', import: 'импорт', role: 'роль', api_key: 'ключ Министерства' };
   const ROLES = { user: 'Житель или гость', organizer: 'Организатор', moderator: 'Модератор', ministry: 'Министерство' };
   const FB_STATUS = { new: 'Принято', in_progress: 'В работе', processed: 'Обработано' };
-  const BTN = 'min-h-[36px] rounded-field border border-stroke bg-glass-hi px-3 text-[.9rem] font-semibold text-brand-ink hover:bg-white';
+  const BTN = 'min-h-[36px] rounded-field border border-stroke bg-glass-hi px-3 text-[.9rem] font-semibold text-brand-ink hover:bg-surface';
   const BTN_MAIN = 'min-h-[40px] rounded-ctl bg-brand px-4 font-bold text-white shadow-cta hover:bg-brand-hover';
   const FIELD = 'min-h-[40px] rounded-field border border-line bg-glass-field px-3 text-base font-medium text-ink focus-visible:border-brand focus-visible:outline-none';
   const TH = 'px-3 py-2 text-left text-[.76rem] font-extrabold uppercase tracking-[.08em] text-ink-3';
@@ -24,23 +24,13 @@
   let editing = null; // событие, которое правим; null — создаём новое
 
   // ---------- обмен с сервером ----------
-  async function api(path, options = {}) {
-    const response = await fetch(path, {
-      ...options,
-      headers: { ...(key ? { 'X-API-Key': key } : {}), ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
-    });
-    if (response.status === 401) { logout(quiet ? '' : 'Ключ не подошёл или устарел. Войдите снова.'); throw new Error('Нужен вход'); }
-    let data = null;
-    try { data = await response.json(); } catch (_) { /* тело может быть пустым */ }
-    if (!response.ok) {
-      const error = (data && data.error) || {};
-      const details = (error.details || []).map((d) => `${d.field}: ${d.message}`).join('; ');
-      throw new Error([error.message || `Ошибка ${response.status}`, details].filter(Boolean).join(' — '));
-    }
-    return data;
-  }
-  const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
-  const patch = (path, body) => api(path, { method: 'PATCH', body: JSON.stringify(body) });
+  // Общий клиент (/static/api.js): ключ подставляется в каждый запрос, а при 401 показывается форма входа.
+  const api = afishaApi.create({
+    headers: () => (key ? { 'X-API-Key': key } : {}),
+    onUnauthorized: () => { logout(quiet ? '' : 'Ключ не подошёл или устарел. Войдите снова.'); return new Error('Нужен вход'); },
+  });
+  const post = api.post;
+  const patch = api.patch;
 
   function say(text, bad = false) {
     const ok = $('#notice'); const err = $('#problem');
@@ -67,7 +57,7 @@
       $('#tab-users').hidden = !session.can_manage_users; // роли и ключи Министерства выдаёт только владелец ключа
       $('#actor').hidden = false;
       $('#actor').textContent = via === 'account' ? `Вы вошли аккаунтом модератора (${session.actor})` : `Вы вошли как ${session.actor}`;
-      categories = await fetch('/api/v1/categories').then((r) => r.json());
+      categories = await api.get('/api/v1/categories');
       $('#edit-form [name=category]').innerHTML = categories.map((c) => `<option value="${esc(c.slug)}">${esc(c.label)}</option>`).join('');
       refreshCounts();
       open(tab);
@@ -309,7 +299,7 @@
     const load = async () => {
       try {
         const items = await api(`/api/v1/admin/feedback?status=${$('#f-status').value}&limit=100`);
-        $('#f-body').innerHTML = items.length ? items.map((f) => `<article class="mb-3 grid gap-2 rounded-ctl border border-line bg-white/60 p-4" data-id="${Number(f.id)}">
+        $('#f-body').innerHTML = items.length ? items.map((f) => `<article class="mb-3 grid gap-2 rounded-ctl border border-line bg-surface/60 p-4" data-id="${Number(f.id)}">
           <div class="flex flex-wrap items-center justify-between gap-2"><strong>${esc(f.kind_label)}${f.user_id ? ` <span class="rounded-full bg-brand-tint px-2 py-[2px] text-[.78rem] font-bold text-brand-ink">аккаунт${f.author_role && f.author_role !== 'user' ? `: ${esc(ROLES[f.author_role] || f.author_role)}` : ''}</span>` : ''}</strong><span class="text-[.85rem] text-ink-3">${esc(FB_STATUS[f.status] || f.status)} · ${esc(when(f.created_at))}${f.event_id ? ` · <a class="underline" href="/event/${Number(f.event_id)}" target="_blank" rel="noopener noreferrer">событие №${Number(f.event_id)}</a>` : ''}</span></div>
           <p class="m-0 whitespace-pre-wrap [overflow-wrap:anywhere]">${esc(f.message)}</p>
           ${f.reply ? `<p class="m-0 whitespace-pre-wrap rounded-field bg-brand-tint px-3 py-2 text-brand-ink [overflow-wrap:anywhere]"><b>Ответ автору:</b> ${esc(f.reply)}</p>` : ''}
@@ -422,7 +412,7 @@
         const created = await post('/api/v1/admin/api-keys', body);
         $('#key-form').reset(); $('#k-limit').value = '600';
         const box = $('#k-new'); box.hidden = false;
-        box.innerHTML = `<b>Ключ «${esc(created.name)}»: скопируйте сейчас, потом он не покажется</b><code class="break-all rounded-field bg-white px-3 py-2">${esc(created.key)}</code>`;
+        box.innerHTML = `<b>Ключ «${esc(created.name)}»: скопируйте сейчас, потом он не покажется</b><code class="break-all rounded-field bg-surface px-3 py-2">${esc(created.key)}</code>`;
         loadKeys();
       });
     });
@@ -432,7 +422,7 @@
       if (event.target.closest('[data-save-limit]')) {
         guarded(async () => { await patch(`/api/v1/admin/api-keys/${row.dataset.key}`, { rate_limit: Number(row.querySelector('[data-limit]').value) }); say('Лимит изменён.'); loadKeys(); });
       } else if (event.target.closest('[data-revoke-key]') && confirm('Отозвать ключ? Он перестанет работать сразу.')) {
-        guarded(async () => { await api(`/api/v1/admin/api-keys/${row.dataset.key}`, { method: 'DELETE' }); say('Ключ отозван.'); loadKeys(); });
+        guarded(async () => { await api.delete(`/api/v1/admin/api-keys/${row.dataset.key}`); say('Ключ отозван.'); loadKeys(); });
       }
     });
     loadUsers(); loadKeys();
@@ -441,7 +431,7 @@
   // ---------- запуск ----------
   document.querySelectorAll('[data-tab]').forEach((button) => button.addEventListener('click', () => open(button.dataset.tab)));
   $('#logout').addEventListener('click', async () => {
-    if (via === 'account') { try { await fetch('/api/v1/auth/logout', { method: 'POST' }); } catch (_) { /* выход всё равно показываем */ } }
+    if (via === 'account') { try { await api.post('/api/v1/auth/logout'); } catch (_) { /* выход всё равно показываем */ } }
     logout();
   });
   $('#login-form').addEventListener('submit', (submit) => { submit.preventDefault(); enter($('#key').value.trim()); $('#key').value = ''; });

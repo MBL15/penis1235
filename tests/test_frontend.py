@@ -64,3 +64,14 @@ def test_chat_shows_the_trace_link_and_confirmation_buttons():
     assert "trace_id: HEX32.test" in js  # идентификатор трассы из истории браузера проверяется перед подстановкой в ссылку
     for cls in ("min-h-[44px]", "bg-brand", "text-bad", "hover:underline", "underline-offset-2"):
         assert cls.replace("[", r"\[").replace("]", r"\]").replace(":", r"\:") in css(), cls
+
+
+def test_pages_and_scripts_always_revalidate(client):
+    """Без Cache-Control браузер сам решает, сколько хранить ui.js, и после обновления сайта показывает старые кнопки.
+    no-cache: каждый раз сверка по ETag, неизменный файл приходит коротким ответом 304."""
+    for path in ("/", "/static/ui.js", "/static/boot.js", "/static/ui.css", "/static/tailwind.css"):
+        response = client.get(path)
+        assert response.status_code == 200 and response.headers["cache-control"] == "no-cache", path
+    first = client.get("/static/ui.js")
+    again = client.get("/static/ui.js", headers={"If-None-Match": first.headers["etag"]})
+    assert again.status_code == 304
