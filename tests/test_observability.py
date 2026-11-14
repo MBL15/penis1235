@@ -108,3 +108,10 @@ def test_liveness_and_readiness(client):
     ready = client.get("/api/v1/health").json()
     assert ready["status"] == "ok" and ready["version"] == config.API_VERSION
     assert client.get("/api/health").status_code == 200  # прежний адрес: на него смотрит healthcheck контейнера
+
+
+def test_metrics_without_token_are_internal_only(client, monkeypatch):
+    """Б-4: без METRICS_TOKEN метрики не отдаются через прокси (внешний посетитель) и на публичный адрес."""
+    monkeypatch.setattr(config, "METRICS_TOKEN", "")
+    assert client.get("/metrics").status_code == 200  # тестовый клиент — не сетевой адрес, как unix-сокет
+    assert client.get("/metrics", headers={"X-Forwarded-For": "203.0.113.7"}).status_code == 403

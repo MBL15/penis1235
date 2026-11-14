@@ -269,3 +269,67 @@ def test_source_fetch_refuses_foreign_redirects_and_huge_pages(monkeypatch):
         culture_ru.http_get(target, retries=1)
     monkeypatch.setattr(culture_ru.urllib.request, "build_opener", _opener(_Response(target, "страница".encode())))
     assert culture_ru.http_get(target, retries=1) == "страница"
+
+
+def test_forwarded_for_is_trusted_only_from_internal_peers(monkeypatch):
+    """Б-2: порт сервиса открыт наружу, TRUST_PROXY=1 — подставной X-Forwarded-For с публичного адреса не меняет ключ лимита."""
+    from types import SimpleNamespace
+
+    from app.security import RateLimiter, internal_peer
+
+    monkeypatch.setattr(config, "TRUST_PROXY", True)
+    monkeypatch.setattr(config, "TRUSTED_PROXIES", [])
+
+    def request(peer):
+        return SimpleNamespace(client=SimpleNamespace(host=peer), headers={"x-forwarded-for": "1.1.1.1, 5.5.5.5"})
+
+    assert RateLimiter.client_ip(request("172.18.0.1")) == "5.5.5.5"  # nginx в сети Docker
+    assert RateLimiter.client_ip(request("8.8.4.4")) == "8.8.4.4"  # напрямую из интернета: заголовок не принят
+    assert internal_peer("10.0.0.5") and internal_peer("::1") and not internal_peer("8.8.8.8")
+    import ipaddress
+
+    monkeypatch.setattr(config, "TRUSTED_PROXIES", [ipaddress.ip_network("172.17.0.1/32")])
+    assert RateLimiter.client_ip(request("172.18.0.1")) == "172.18.0.1"  # не из списка
+    assert RateLimiter.client_ip(request("172.17.0.1")) == "5.5.5.5"
+
+
+def test_file_sqlite_uses_wal_and_busy_timeout(tmp_path, monkeypatch):
+    """К-2: одна SQLite на сайт, бота и планировщика — WAL и ожидание блокировки вместо «database is locked»."""
+    import importlib
+
+    from app import db
+
+    monkeypatch.setattr(config, "DATABASE_URL", f"sqlite:///{(tmp_path / 'a.db').as_posix()}")
+    fresh = importlib.reload(db)
+    try:
+        with fresh.engine.connect() as conn:
+            assert conn.exec_driver_sql("PRAGMA journal_mode").scalar() == "wal"
+            assert conn.exec_driver_sql("PRAGMA busy_timeout").scalar() == 5000
+        fresh.engine.dispose()
+    finally:
+        monkeypatch.undo()
+        importlib.reload(db)
+
+
+def test_trace_masks_phones_and_emails():
+    """Б-7: трасса открыта по ссылке 30 дней — телефон и почта из вопроса в ней не хранятся."""
+    from app.safety import mask_pii
+
+    text = "Позвоните +7 (917) 123-45-67 или 89171234567, почта ivan.petrov@mail.ru. Концерт 14.11 в 19:00 до 1500 ₽, 2026 год"
+    masked = mask_pii(text)
+    assert "917" not in masked and "ivan" not in masked and masked.count("[телефон скрыт]") == 2
+    assert "14.11 в 19:00 до 1500 ₽, 2026 год" in masked
+
+
+def test_mini_app_signature_is_fresh_for_changes(client, monkeypatch):
+    """Б-6: подпись мини-приложения для чтения живёт сутки, для изменений и входа — час."""
+    import time as clock
+
+    from app.telegram_auth import make_init_data
+
+    monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", "123:TEST")
+    old = make_init_data(777, "123:TEST", auth_date=int(clock.time()) - 2 * 3600)
+    assert client.get("/api/v1/subscriptions", headers={"X-Telegram-Init-Data": old}).status_code == 200
+    created = client.post("/api/v1/subscriptions", json={"city": "", "category": ""}, headers={"X-Telegram-Init-Data": old})
+    assert created.status_code == 401
+    assert client.post("/api/v1/auth/telegram", json={"init_data": old}).status_code == 401

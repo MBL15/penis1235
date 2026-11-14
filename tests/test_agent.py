@@ -64,8 +64,9 @@ def test_without_a_gemini_key_the_rules_answer(session, seeded, monkeypatch):
 def test_missing_keyword_is_reported_instead_of_substituting_other_concerts(session, add):
     add("Концерт «Цвети, республика моя!»", datetime(2026, 11, 10, 14, 0), city="Салават", category="concert", price_min=350)
     result = agent.ask(session, "Есть ли в Салавате джаз на следующей неделе?", now=NOW)
-    assert "событий со словом «джаз» не нашлось" in result.reply  # раньше отвечало «Нашёл 1 событие» про не-джаз
-    assert [e.title for e in result.events] == ["Концерт «Цвети, республика моя!»"]
+    # раньше отвечало «Нашёл 1 событие» про не-джаз, потом показывало его с оговоркой; теперь честный отказ (ревью Т-9)
+    assert "событий со словом «джаз» в афише нет" in result.reply and "1 событие" in result.reply
+    assert result.events == []
 
 
 def test_existing_keyword_is_found(session, add):
@@ -179,3 +180,9 @@ def test_only_events_returned_by_tools_can_become_cards(named, add):
     stranger, _ = add("Балет «Жизель»", datetime(2026, 11, 9, 19, 0), category="theatre")  # в базе есть, поиск его не вернул
     result = agent._result_from_final(_final("Ещё есть Балет «Жизель»."), seen, {})
     assert result.events == []
+
+def test_named_topic_missing_is_an_honest_refusal_without_other_cards(session, add):
+    """ТЗ Прил. А «Есть ли в Салавате джаз на следующей неделе?»: джаза нет — нет и чужих карточек, только число и подсказка."""
+    add("Спектакль «Ревизор»", datetime(2026, 11, 10, 18, 0), city="Салават", category="theatre")
+    result = agent.ask(session, "джаз в Салавате на следующей неделе", now=NOW)
+    assert result.events == [] and "джаз" in result.reply and "нет" in result.reply and "1 событие" in result.reply

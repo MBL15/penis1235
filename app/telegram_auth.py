@@ -11,10 +11,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import parse_qsl
 
-MAX_AGE_SECONDS = 24 * 3600  # старше суток — считаем перехваченной
+MAX_AGE_SECONDS = 24 * 3600  # чтение (список своих подписок): мини-приложение бывает открыто часами
+# Изменения и вход: перехваченная строка initData не должна сутки управлять чужими подписками или давать 30-дневную куку
+# входа (ревью 14.11.2026, Б-6). Мини-приложение, открытое дольше часа, переоткрывается из бота.
+WRITE_MAX_AGE_SECONDS = 3600
 
 
-def validate_init_data(init_data: str, bot_token: str, *, now: float | None = None) -> int | None:
+def validate_init_data(init_data: str, bot_token: str, *, now: float | None = None, max_age: int = MAX_AGE_SECONDS) -> int | None:
     """Номер пользователя Telegram (он же номер личного чата с ботом) или None, если подпись неверна или устарела."""
     if not init_data or not bot_token or len(init_data) > 4096:
         return None
@@ -33,7 +36,7 @@ def validate_init_data(init_data: str, bot_token: str, *, now: float | None = No
         user_id = int(user["id"])
     except (ValueError, KeyError, TypeError):
         return None
-    if (now if now is not None else time.time()) - issued > MAX_AGE_SECONDS:
+    if (now if now is not None else time.time()) - issued > max_age:
         return None
     return user_id
 
@@ -51,9 +54,9 @@ def _display_name(first: object, last: object) -> str:
     return re.sub(r"[\x00-\x1f\x7f]", "", name)[:100]
 
 
-def parse_init_data(init_data: str, bot_token: str, *, now: float | None = None) -> TelegramUser | None:
+def parse_init_data(init_data: str, bot_token: str, *, now: float | None = None, max_age: int = WRITE_MAX_AGE_SECONDS) -> TelegramUser | None:
     """Как validate_init_data, но возвращает ещё и имя: для аккаунта в мини-приложении."""
-    user_id = validate_init_data(init_data, bot_token, now=now)
+    user_id = validate_init_data(init_data, bot_token, now=now, max_age=max_age)
     if user_id is None:
         return None
     try:

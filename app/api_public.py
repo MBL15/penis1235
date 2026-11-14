@@ -58,7 +58,7 @@ from .hints import empty_hint
 from .planner import PlanRequest, plan_weekend
 from .search import WHEN_VALUES, SearchFilters, facets, get_event, resolve_when, search, venues
 from .security import RateLimiter, ask_limiter
-from .telegram_auth import validate_init_data
+from .telegram_auth import MAX_AGE_SECONDS, WRITE_MAX_AGE_SECONDS, validate_init_data
 from . import subscriptions
 
 router = APIRouter(dependencies=[accounts.PartnerKeyDep], responses={
@@ -282,7 +282,8 @@ def telegram_chat(request: Request, user: accounts.OptionalUser) -> int:
     if not config.TELEGRAM_BOT_TOKEN:
         raise HTTPException(503, "Подписки через API работают из мини-приложения Telegram; на этом сервере они не настроены. "
                                  "Оформите подписку в боте: /subscribe")
-    chat_id = validate_init_data(request.headers.get("x-telegram-init-data", ""), config.TELEGRAM_BOT_TOKEN)
+    max_age = MAX_AGE_SECONDS if request.method in ("GET", "HEAD") else WRITE_MAX_AGE_SECONDS  # изменения — по свежей подписи
+    chat_id = validate_init_data(request.headers.get("x-telegram-init-data", ""), config.TELEGRAM_BOT_TOKEN, max_age=max_age)
     if chat_id is None:
         raise HTTPException(401, "Нужна подпись Telegram: откройте афишу из бота или войдите через Telegram в кабинете "
                                  "(заголовок X-Telegram-Init-Data)")
@@ -378,9 +379,11 @@ def send_feedback(payload: FeedbackIn, session: SessionDep, user: accounts.Optio
 
 @router.post("/ask", response_model=AskOut, tags=["ИИ-поиск"], dependencies=[Depends(ask_limiter)],
              summary="Вопрос обычным языком → подборка событий")
-def ask(payload: AskIn, session: SessionDep) -> AskOut:
+def ask(payload: AskIn, request: Request, session: SessionDep, user: accounts.OptionalUser) -> AskOut:
     history = [turn.model_dump() for turn in payload.history]
-    result = agent_ask(session, payload.message, history, context_event_ids=payload.context_event_ids)
+    # Лимиты расхода модели (ТЗ §6.5) считаются на человека: после входа — его чат Telegram (общий с ботом), иначе адрес
+    user_key = f"tg:{user.telegram_id}" if user is not None else f"ip:{RateLimiter.client_ip(request)}"
+    result = agent_ask(session, payload.message, history, context_event_ids=payload.context_event_ids, user_key=user_key)
     metrics.inc("afisha_ask_total", mode=result.mode, provider=result.provider or "none")
     flags = _trace_flags(session, result.trace_id)  # один запрос к базе, а не по одному на каждую отметку
     for flag in ("injection", "offtopic"):

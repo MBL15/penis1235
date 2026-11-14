@@ -533,7 +533,8 @@ def test_migration_0005_upgrades_a_database_from_the_previous_version(tmp_path, 
     assert "user_id" in {c["name"] for c in found.get_columns("subscriptions")}
     assert any(i["unique"] and i["column_names"] == ["telegram_id"] for i in found.get_indexes("users"))
     with engine.connect() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0005"
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0006"  # до последней миграции
+    assert "bot_dialogs" in set(found.get_table_names())
     assert db.run_migrations(engine) == "upgraded"  # повторный запуск ничего не ломает
 
 

@@ -18,13 +18,14 @@ from . import agent_actions, config
 from .agent_prompt import MAX_SHOWN, PROMPT_VERSION, build_system_prompt
 from .agent_tools import MAX_TOOL_CALLS, TOOLS, ToolContext, filters_from_tool_input, run_tool
 from .config import now_local
-from .formatting import when_text
+from .formatting import price_text, when_text
 from .models import Event
 from .normalize import find_city_in_text, norm_text
 from .rules import parse_conversation, parse_query
-from .safety import OFFTOPIC_REPLY, REFUSAL, detect_injection, is_offtopic, leaks_prompt, new_canary, ungrounded_numbers
+from .safety import (OFFTOPIC_REPLY, REFUSAL, detect_injection, is_offtopic, leaks_prompt, new_canary, ungrounded_numbers,
+                     ungrounded_titles)
 from .search import SearchFilters, get_event, search, similar
-from .security import llm_budget
+from .security import llm_budget, user_llm_budget
 from .tracing import TraceBuilder
 
 log = logging.getLogger("afisha.agent")
@@ -62,6 +63,13 @@ class AgentResult:
 
 # ---------- публичная точка входа ----------
 
+LIMIT_NOTES = {  # что видит пользователь, когда исчерпан его лимит расхода модели (ТЗ §7.5: понятное сообщение)
+    "user_daily": "ИИ-помощник на сегодня исчерпал ваш лимит, поэтому отвечаю обычным поиском по афише с теми же фильтрами. "
+                  "Завтра помощник снова будет доступен.",
+    "dialog": "В этом разговоре ИИ-помощник уже ответил на много вопросов, поэтому сейчас отвечаю обычным поиском по афише. "
+              "Через полчаса помощник снова будет доступен.",
+}
+
 def _providers(client=None, openai_client=None) -> list[str]:
     """Провайдеры модели по порядку LLM_PROVIDERS: тот, у кого есть ключ (или передан готовый клиент, как в тестах)."""
     available = {"gemini": client is not None or bool(config.GEMINI_API_KEY),
@@ -84,11 +92,13 @@ def ask(
     now: datetime | None = None,
     context_event_ids: list[int] | None = None,
     chat_id: int | None = None,
+    user_key: str | None = None,
 ) -> AgentResult:
     """Ответить на вопрос пользователя. history — прошлые реплики [{role, content}, ...] без текущей.
 
     context_event_ids: события из прошлого ответа (для «ещё», «в другой день», «похожее»). chat_id: чат Telegram, если вопрос
-    задан в боте (нужен подпискам)."""
+    задан в боте (нужен подпискам). user_key: кто спрашивает, для лимитов расхода на пользователя и диалог (ТЗ §6.5);
+    по умолчанию чат Telegram."""
     history = history or []
     now = now or now_local()
     message = message[:MAX_MESSAGE_CHARS]
@@ -102,8 +112,23 @@ def ask(
     if is_offtopic(message):
         trace.flag("offtopic", True)
         return _finish(session, trace, AgentResult(reply=OFFTOPIC_REPLY, mode="rules"))
+    # Историю присылает клиент, и подделать можно любую реплику, в том числе «ассистента». Реплики с инструкциями до
+    # модели не доходят: иначе текущее сообщение проверялось бы, а та же просьба в «прошлой реплике» прошла бы мимо фильтра.
+    clean = [t for t in history if not detect_injection(str(t.get("content") or "")[:MAX_TURN_CHARS])]
+    if len(clean) != len(history):
+        trace.flag("injection_in_history", len(history) - len(clean))
+        history = clean
 
     providers = _providers(client, openai_client) if config.AGENT_MODE != "rules" else []
+    if user_key is None and chat_id is not None:
+        user_key = f"tg:{chat_id}"
+    limit_hit = user_llm_budget.exceeded(user_key) if providers else None
+    if limit_hit:
+        trace.flag("fallback_reason", f"limit_{limit_hit}")
+        log.info("Лимит расхода модели (%s) исчерпан, отвечаю по правилам", limit_hit)
+        result = _rules_ask(session, message, history, now, trace, context_ids, chat_id)
+        result.reply = f"{LIMIT_NOTES[limit_hit]}\n\n{result.reply}"
+        return _finish(session, trace, result)
     if providers:
         if not llm_budget.acquire():
             trace.flag("fallback_reason", "budget")
@@ -133,6 +158,7 @@ def ask(
                 log.warning("Модель отказала (%s), отвечаю по правилам", exc)
             finally:
                 llm_budget.release()
+                user_llm_budget.record(user_key, trace.input_tokens + trace.output_tokens)
     return _finish(session, trace, _rules_ask(session, message, history, now, trace, context_ids, chat_id))
 
 
@@ -166,6 +192,26 @@ def _history_messages(history: list[dict]) -> list[dict]:
     while messages and messages[0]["role"] != "user":  # диалог должен начинаться с пользователя
         messages.pop(0)
     return messages
+
+
+IDS_REMINDER = ("[Служебная проверка сервера: в ответе нет event_ids. Верни тот же JSON-ответ и укажи в event_ids id событий, "
+                "которые ты называешь, только из результатов инструментов. Если подходящих событий нет, оставь event_ids пустым "
+                "и прямо скажи, что их нет.]")
+_NO_DATA_HINT = re.compile(r"\bнет\b|не\s+наш|не\s+найд|отсутству", re.I)
+
+
+def _needs_ids(result: AgentResult, ctx: ToolContext) -> bool:
+    """Модель назвала события, но не вернула их id и названия в тексте не совпали с найденными: карточек не будет, хотя
+    подходящее найдено (прогон 13.11.2026: 9 запросов «пустая выдача при наличии подходящих»). Такой ответ стоит одного повтора."""
+    return (not result.events and not result.needs_clarification and not ctx.pending
+            and any(e.status != "cancelled" for e in ctx.seen.values()) and not _NO_DATA_HINT.search(result.reply))
+
+
+def _grounding_source(message: str, history: list[dict]) -> str:
+    """Что пользователь сам сказал: его числа и слова ответ может повторять. Реплики «ассистента» из истории в основу не
+    берутся: историю присылает клиент, и подделанный «прошлый ответ» иначе провёл бы выдуманные цены и названия."""
+    turns = [str(t.get("content", ""))[:MAX_TURN_CHARS] for t in history[-MAX_HISTORY_TURNS:] if t.get("role") != "assistant"]
+    return " ".join([message, *turns])
 
 
 def mentioned_events(reply: str, seen: dict[int, Event]) -> list[Event]:
@@ -282,8 +328,9 @@ def _gemini_ask(session: Session, message: str, history: list[dict], client, now
         types.FunctionDeclaration(name=t["name"], description=t["description"], parameters_json_schema=t["input_schema"])
         for t in TOOLS
     ]
+    prompt = build_system_prompt(session, now, canary)
     settings = types.GenerateContentConfig(
-        system_instruction=build_system_prompt(session, now, canary),
+        system_instruction=prompt,
         tools=[types.Tool(function_declarations=declarations)],
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),  # цикл вызовов ведём сами
         max_output_tokens=4096,
@@ -296,11 +343,12 @@ def _gemini_ask(session: Session, message: str, history: list[dict], client, now
     hint = f"\n[Служебная справка сервера: в прошлом ответе показаны события с id {context_ids}]" if context_ids else ""
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message + hint)]))
     ctx = ToolContext(session=session, now=now, trace=trace, chat_id=chat_id)
-    ctx.source_text.append(message + " " + " ".join(str(t.get("content", "")) for t in history[-MAX_HISTORY_TURNS:]))
+    ctx.source_text.append(_grounding_source(message, history))
     deadline = time.monotonic() + config.LLM_TIME_BUDGET
 
     try:
-        for _ in range(MAX_STEPS):
+        reminded = False
+        for step in range(MAX_STEPS):
             if time.monotonic() > deadline:  # запрос не должен держать поток сервера минутами
                 raise AgentError("превышено время на ответ")
             response = _generate(client, contents, settings, trace)
@@ -315,7 +363,14 @@ def _gemini_ask(session: Session, message: str, history: list[dict], client, now
                 reason = getattr(getattr(candidate, "finish_reason", None), "name", "")
                 if reason in ("SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII"):
                     raise AgentRefusal(f"Gemini остановил ответ: {reason}")
-                return _checked(_result_from_final((response.text or "").strip(), ctx.seen, ctx.last_filters), ctx, canary)
+                result = _result_from_final((response.text or "").strip(), ctx.seen, ctx.last_filters)
+                if not reminded and step + 1 < MAX_STEPS and _needs_ids(result, ctx):
+                    reminded = True
+                    trace.flag("ids_reminder", True)
+                    contents.append(candidate.content)
+                    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=IDS_REMINDER)]))
+                    continue
+                return _checked(result, ctx, canary, prompt)
 
             contents.append(candidate.content)
             parts = []
@@ -345,14 +400,16 @@ def _openai_ask(session: Session, message: str, history: list[dict], client, now
     trace.model, trace.prompt_version = model, PROMPT_VERSION
     tools = to_openai_tools(TOOLS)
     hint = f"\n[Служебная справка сервера: в прошлом ответе показаны события с id {context_ids}]" if context_ids else ""
-    messages = [{"role": "system", "content": build_system_prompt(session, now, canary)}, *_history_messages(history),
+    prompt = build_system_prompt(session, now, canary)
+    messages = [{"role": "system", "content": prompt}, *_history_messages(history),
                 {"role": "user", "content": message + hint}]
     ctx = ToolContext(session=session, now=now, trace=trace, chat_id=chat_id)
-    ctx.source_text.append(message + " " + " ".join(str(t.get("content", "")) for t in history[-MAX_HISTORY_TURNS:]))
+    ctx.source_text.append(_grounding_source(message, history))
     deadline = time.monotonic() + config.LLM_TIME_BUDGET
 
     try:
-        for _ in range(MAX_STEPS):
+        reminded = False
+        for step in range(MAX_STEPS):
             if time.monotonic() > deadline:
                 raise AgentError("превышено время на ответ")
             data = client.chat(model=model, messages=messages, tools=tools)
@@ -366,7 +423,14 @@ def _openai_ask(session: Session, message: str, history: list[dict], client, now
             if not calls:
                 if choice.get("finish_reason") == "content_filter":
                     raise AgentRefusal("модель остановила ответ: content_filter")
-                return _checked(_result_from_final((msg.get("content") or "").strip(), ctx.seen, ctx.last_filters), ctx, canary)
+                result = _result_from_final((msg.get("content") or "").strip(), ctx.seen, ctx.last_filters)
+                if not reminded and step + 1 < MAX_STEPS and _needs_ids(result, ctx):
+                    reminded = True
+                    trace.flag("ids_reminder", True)
+                    messages.append({"role": "assistant", "content": msg.get("content") or ""})
+                    messages.append({"role": "user", "content": IDS_REMINDER})
+                    continue
+                return _checked(result, ctx, canary, prompt)
 
             messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
             for call in calls:
@@ -386,16 +450,35 @@ def _openai_ask(session: Session, message: str, history: list[dict], client, now
         raise AgentError(f"{type(exc).__name__}: {exc}") from exc
 
 
-def _checked(result: AgentResult, ctx: ToolContext, canary: str) -> AgentResult:
-    """Проверки готового ответа модели: утечка промпта, числа без оснований, предложенные действия."""
+def _safe_reply(events: list[Event], now: datetime) -> str:
+    """Ответ только из полей базы: им заменяется текст модели, в котором нашлись факты без основания."""
+    lines = [f"• «{e.title}» — {when_text(e, now)}, {e.venue or e.city}, {price_text(e)}" for e in events]
+    return "По данным афиши подходят:\n" + "\n".join(lines) + "\nПодробности и ссылки на источник — в карточках."
+
+
+def _checked(result: AgentResult, ctx: ToolContext, canary: str, prompt: str = "") -> AgentResult:
+    """Проверки готового ответа модели: утечка промпта, факты без оснований, предложенные действия.
+
+    Каждый факт должен браться из результатов инструментов (ТЗ §7.1). Числа (цены, даты, время, возраст) и названия
+    в «ёлочках», которых там нет, пользователю не показываются: при найденных событиях текст модели заменяется ответом
+    из полей базы, без событий ответ уходит в режим правил (AgentRefusal)."""
     trace = ctx.trace
     if leaks_prompt(result.reply, canary):  # метка из системного промпта появилась в ответе: промпт утёк
         trace.flag("leaked_prompt", True)
         result.reply, result.events = REFUSAL, []
     else:
-        missing = ungrounded_numbers(result.reply, " ".join(ctx.source_text))
-        if missing:
-            trace.flag("ungrounded_numbers", missing[:10])
+        source = " ".join(ctx.source_text)
+        numbers = ungrounded_numbers(result.reply, source)
+        titles = ungrounded_titles(result.reply, source, prompt)
+        if numbers:
+            trace.flag("ungrounded_numbers", numbers[:10])
+        if titles:
+            trace.flag("ungrounded_titles", [t[:80] for t in titles[:10]])
+        if numbers or titles:
+            if not result.events or result.needs_clarification:
+                raise AgentRefusal("в ответе модели факты без основания в данных")
+            trace.flag("reply_replaced", True)
+            result.reply = _safe_reply(result.events, ctx.now)
     if result.ids_from_text and result.events:
         trace.flag("event_ids_from_text", [e.id for e in result.events])
     trace.plan = {"filters": ctx.last_filters, "tool_calls": ctx.calls}
@@ -411,6 +494,7 @@ CLARIFY = (
     "Подскажите, когда и что вас интересует. Например: «в субботу с ребёнком до 1000 рублей», "
     "«бесплатные выставки в Уфе» или «концерты на выходных»."
 )
+_PLAN_WORDS = re.compile(r"\b(?:сделай|составь|построй|подбери)\b.{0,30}\bплан|\bплан\s+(?:на|дня|выходн)|\bраспланир\w*")
 _SUBSCRIPTION_WORDS = re.compile(r"\b(?:под|от)пи[сш]\w*")
 _STATUS_ASK = re.compile(r"\bотмен\w*|\bперенес\w*|\bперенос\w*")
 _UNSUBSCRIBE_WORDS =re.compile(r"\bотпи[сш]\w*|\bотмени\w*\s+подписк")
@@ -466,6 +550,20 @@ def _cancelled_note(session: Session, filters: SearchFilters, now: datetime, tra
     return " Отменено: " + "; ".join(f"«{e.title}» ({when_text(e)})" for e in found) + "."
 
 
+def _plan_reply(session: Session, message: str, now: datetime, trace: TraceBuilder) -> AgentResult | None:
+    """«Сделай план на воскресенье: три события, 2000 на двоих» (ТЗ Прил. А): тот же планировщик, что у /plan и plan_day."""
+    if not _PLAN_WORDS.search(norm_text(message)):
+        return None
+    from .planner import plan_weekend, render_plan_text, request_from_text
+
+    request = request_from_text(message, now.date(), now=now)
+    plan = plan_weekend(session, request, now)
+    events = [i.event for i in plan.items]
+    trace.plan = {"planner": request.describe()}
+    trace.step("plan_day", {"request": "; ".join(request.describe())}, ids=[e.id for e in events], total=len(events))
+    return AgentResult(reply=render_plan_text(plan), events=events, mode="rules", filters={"plan": request.describe()})
+
+
 def _subscription_reply(session: Session, message: str, trace: TraceBuilder, today, chat_id: int | None) -> AgentResult | None:
     """Просьбы о подписке. Данные не меняются: агент предлагает действие, выполнит его человек кнопкой."""
     if not _SUBSCRIPTION_WORDS.search(norm_text(message)):
@@ -504,6 +602,9 @@ def _rules_ask(session: Session, message: str, history: list[dict], now: datetim
     subscription = _subscription_reply(session, message, trace, today, chat_id)
     if subscription is not None:
         return subscription
+    plan = _plan_reply(session, message, now, trace)
+    if plan is not None:
+        return plan
     parsed = parse_conversation(user_messages, today, context_ids)
     caveats = _caveats(parsed)
     trace.plan = {"conditions": parsed.notes, "corrections": parsed.corrections, "unsupported": parsed.unsupported,
@@ -569,6 +670,15 @@ def _rules_ask(session: Session, message: str, history: list[dict], now: datetim
         )
     shown = events[:MAX_SHOWN]
     reply = f"Нашёл {total} {_plural(total)} ({asked}). Показываю ближайшие {len(shown)}."
+    if blocking and relaxed[0][0] == "q" and not parsed.guessed_q and not (filters.category or filters.kids):
+        # Человек прямо назвал, что ищет («джаз в Салавате»), а этого нет, и без слова от темы ничего не остаётся: честный
+        # отказ без чужих карточек (ТЗ Прил. А, метрика №5). Если тема остаётся («кукольный» → детские спектакли),
+        # ниже показываем близкое с оговоркой: «сначала ответ, потом предложение сузить» (§7.3).
+        return AgentResult(
+            reply=(f"По запросу ({asked}) событий со словом «{asked_word}» в афише нет. Без этого слова по остальным условиям "
+                   f"есть {total} {_plural(total)}: напишите запрос без него, и я их покажу.") + caveats,
+            mode="rules", filters=filters.describe(),
+        )
     if blocking and relaxed[0][0] == "q":
         reply = (
             f"По запросу ({asked}) событий со словом «{asked_word}» не нашлось. "

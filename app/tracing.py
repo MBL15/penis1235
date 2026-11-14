@@ -14,6 +14,7 @@ from . import config
 from .config import now_local
 from .models import AgentTrace
 from .observability import request_id_var
+from .safety import mask_pii
 
 RETENTION_DAYS = 30
 MAX_QUERY_CHARS = 1000
@@ -71,8 +72,8 @@ class TraceBuilder:
             session.add(AgentTrace(
                 id=self.id, created_at=now_local(), request_id=request_id_var.get() if request_id_var.get() != "-" else "",
                 mode=self.mode, provider=self.provider, model=self.model, prompt_version=self.prompt_version,
-                query=self.query[:MAX_QUERY_CHARS], history_turns=self.history_turns, plan=self.plan, steps=self.steps,
-                event_ids=event_ids, reply=reply[:MAX_REPLY_CHARS], needs_clarification=needs_clarification, flags=self.flags,
+                query=mask_pii(self.query)[:MAX_QUERY_CHARS], history_turns=self.history_turns, plan=self.plan, steps=self.steps,
+                event_ids=event_ids, reply=mask_pii(reply)[:MAX_REPLY_CHARS], needs_clarification=needs_clarification, flags=self.flags,
                 latency_ms=int((time.perf_counter() - self.started) * 1000), input_tokens=self.input_tokens,
                 output_tokens=self.output_tokens, cost_rub=cost_rub(self.input_tokens, self.output_tokens) if self.mode == "llm" else 0.0,
             ))

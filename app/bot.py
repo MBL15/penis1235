@@ -23,7 +23,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.orm import Session
 
-from . import agent_actions, config, feedback, subscriptions
+from . import agent_actions, config, dialogs, feedback, subscriptions
 from .agent import ask
 from .config import now_local
 from .db import SessionLocal, init_db
@@ -53,6 +53,7 @@ QUICK = {
 
 # Состояние чатов хранится в памяти процесса: для демо этого достаточно.
 chat_city: dict[int, str] = {}
+LLM_SOURCE_NOTE = "Ответ собран ИИ-агентом по карточкам афиши, а не по его собственным знаниям."
 chat_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=10))
 chat_events: dict[int, list[int]] = {}  # события из последнего подбора агента: на них опираются «ещё», «похожее», «в другой день»
 # Свободный текст уходит в платную модель: не больше 8 вопросов в минуту с одного пользователя и не больше одного
@@ -370,16 +371,29 @@ def agent_view(chat_id: int, text: str) -> View:
     city = chat_city.get(chat_id)
     message = f"{text}\n(Город пользователя: {city})" if city else text
     with SessionLocal() as session:
+        if chat_id not in chat_history and chat_id not in chat_events:  # бот перезапускался: диалог берём из базы
+            saved_history, saved_events = dialogs.load(session, chat_id)
+            if saved_history:
+                chat_history[chat_id].extend(saved_history)
+            if saved_events:
+                chat_events[chat_id] = saved_events
         result = ask(session, message, list(chat_history[chat_id]), context_event_ids=chat_events.get(chat_id), chat_id=chat_id)
         chat_history[chat_id].extend([{"role": "user", "content": text}, {"role": "assistant", "content": result.reply}])
         _forget_oldest(chat_history)
         if result.events:
             chat_events[chat_id] = [e.id for e in result.events]
             _forget_oldest(chat_events)
+        try:
+            dialogs.save(session, chat_id, list(chat_history[chat_id]), chat_events.get(chat_id))
+        except Exception:  # noqa: BLE001  ответ важнее сохранения: без записи диалог просто не переживёт перезапуск
+            session.rollback()
+            log.warning("Диалог чата не сохранён в базе", exc_info=True)
         body = html.escape(result.reply)
         # Развёрнутый ответ модели уже описывает каждое событие; короткий ответ правил дополняем списком карточек.
         if result.events and result.mode != "llm":
             body += "\n\n" + render_list(result.events, html=True)
+        if result.mode == "llm":  # ТЗ §6.4: видно, что ответ построен по данным сервиса, а не «мнением модели»
+            body += "\n\n<i>" + html.escape(LLM_SOURCE_NOTE) + "</i>"
         kb = InlineKeyboardBuilder()
         for number, event in enumerate(result.events, 1):
             kb.button(text=f"{number}. {event.title[:28]}", callback_data=f"e:{event.id}")

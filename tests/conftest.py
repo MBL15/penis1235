@@ -23,11 +23,19 @@ from app import config  # noqa: E402
 from app.db import get_session  # noqa: E402
 from app.ingest import upsert_event  # noqa: E402
 from app.main import app  # noqa: E402
-from app.security import api_limiter, ask_limiter, auth_limiter, llm_budget  # noqa: E402
+from app.security import api_limiter, ask_limiter, auth_limiter, llm_budget, user_llm_budget  # noqa: E402
 from app.models import Base  # noqa: E402
 from app.schemas import EventIn  # noqa: E402
 
 NOW = datetime(2026, 11, 7, 15, 0)  # суббота, 15:00
+
+
+@pytest.fixture(autouse=True)
+def _fresh_user_llm_budget():
+    """Лимиты расхода модели на пользователя живут в памяти процесса: каждый тест начинает с нуля."""
+    user_llm_budget.reset()
+    yield
+    user_llm_budget.reset()
 
 
 @pytest.fixture

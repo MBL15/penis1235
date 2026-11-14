@@ -1,5 +1,6 @@
 """Сборка приложения: страницы, виджет, подключение API (/api/v1 и старые пути /api/*), защита, логи и метрики."""
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -9,7 +10,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 
-from . import accounts, config, errors
+from . import accounts, config, dialogs, errors
 from .api_accounts import admin_router as users_admin_router
 from .api_accounts import router as accounts_router
 from .api_admin import router as admin_router
@@ -21,7 +22,7 @@ from .deps import SessionDep
 from .models import Event
 from .observability import metrics, observe, setup_logging
 from .search import SearchFilters, _conditions, get_event
-from .security import ask_limiter, auth_limiter, guard  # noqa: F401  (ask_limiter и auth_limiter используют тесты)
+from .security import ask_limiter, auth_limiter, guard, internal_peer  # noqa: F401  (ask_limiter и auth_limiter используют тесты)
 
 log = logging.getLogger("afisha.api")
 
@@ -73,6 +74,7 @@ async def lifespan(_: FastAPI):
         purge_old(session)  # срок хранения обращений
         purge_traces(session)  # трассы ответов агента
         purge_actions(session)
+        dialogs.purge(session)  # диалоги бота старше суток
         accounts.purge_history(session)  # история посещений старше срока хранения
         accounts.purge_sessions(session)  # просроченные входы
     if config.ADMIN_API_KEY and len(config.ADMIN_API_KEY) < config.ADMIN_KEY_MIN_LENGTH:
@@ -82,7 +84,34 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Афиша культуры Башкортостана", version=config.API_VERSION, description=DESCRIPTION,
-              openapi_tags=TAGS, lifespan=lifespan)
+              openapi_tags=TAGS, lifespan=lifespan, docs_url=None, redoc_url=None)
+
+# Страницы документации берут скрипты с CDN. По умолчанию FastAPI ссылается на плавающую версию (swagger-ui-dist@5, redoc@2):
+# новая версия пакета попала бы на наш домен без проверки. Версии закреплены точно (ревью 14.11.2026, Б-5).
+SWAGGER_UI = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14"
+REDOC_JS = "https://cdn.jsdelivr.net/npm/redoc@2.1.5/bundles/redoc.standalone.js"
+
+
+@app.get("/docs", include_in_schema=False)
+def swagger_docs() -> Response:
+    from fastapi.openapi.docs import get_swagger_ui_html
+
+    return get_swagger_ui_html(openapi_url=app.openapi_url, title=f"{app.title} — API", swagger_js_url=f"{SWAGGER_UI}/swagger-ui-bundle.js",
+                               swagger_css_url=f"{SWAGGER_UI}/swagger-ui.css", oauth2_redirect_url="/docs/oauth2-redirect")
+
+
+@app.get("/docs/oauth2-redirect", include_in_schema=False)
+def swagger_redirect() -> Response:
+    from fastapi.openapi.docs import get_swagger_ui_oauth2_redirect_html
+
+    return get_swagger_ui_oauth2_redirect_html()
+
+
+@app.get("/redoc", include_in_schema=False)
+def redoc_docs() -> Response:
+    from fastapi.openapi.docs import get_redoc_html
+
+    return get_redoc_html(openapi_url=app.openapi_url, title=f"{app.title} — API", redoc_js_url=REDOC_JS)
 errors.install(app)
 # Чужим сайтам (виджет, сайт министерства) открыто только чтение. POST и PATCH из браузера с другого сайта
 # не проходят: иначе любая страница могла бы тратить квоту ИИ руками своих посетителей.
@@ -108,9 +137,15 @@ def liveness() -> dict:
 
 @app.get("/metrics", include_in_schema=False)
 def metrics_endpoint(request: Request, session: SessionDep) -> PlainTextResponse:
-    """Метрики Prometheus: запросы, ошибки, задержки. Закройте на прокси от внешнего мира или задайте METRICS_TOKEN."""
-    if config.METRICS_TOKEN and request.headers.get("authorization", "") != f"Bearer {config.METRICS_TOKEN}":
-        return errors.error_response(401, "Нужен заголовок Authorization: Bearer <токен метрик>")
+    """Метрики Prometheus: запросы, ошибки, задержки. С METRICS_TOKEN — только с заголовком Authorization: Bearer <токен>;
+    без токена — только изнутри (localhost, частная сеть): снаружи число запросов, ошибок и пути видеть незачем."""
+    if config.METRICS_TOKEN:
+        given = request.headers.get("authorization", "").encode("utf-8")
+        if not secrets.compare_digest(given, f"Bearer {config.METRICS_TOKEN}".encode("utf-8")):
+            return errors.error_response(401, "Нужен заголовок Authorization: Bearer <токен метрик>")
+    elif request.headers.get("x-forwarded-for") or not internal_peer(request.client.host if request.client else None):
+        # через прокси пришёл внешний посетитель (или адрес публичный): без токена метрики не отдаём
+        return errors.error_response(403, "Метрики доступны изнутри сети или с токеном METRICS_TOKEN")
     total = session.scalar(select(func.count()).select_from(Event).where(*_conditions(SearchFilters(), config.now_local()))) or 0
     return PlainTextResponse(metrics.render({"afisha_events_current": total}), media_type="text/plain; version=0.0.4")
 

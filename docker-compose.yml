@@ -25,7 +25,8 @@ services:
     <<: *hardening
     build: .
     ports:
-      - "${WEB_PORT:-8000}:8000"
+      # За nginx на той же машине задайте WEB_BIND=127.0.0.1: порт сервиса не будет виден снаружи
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8000}:8000"
     environment:
       HOME: /tmp
       DATABASE_URL: sqlite:////data/afisha.db

@@ -1,6 +1,6 @@
 """Инструменты агента (ТЗ §7.2). Каждый возвращает структурированный результат (JSON), а не готовый текст ответа.
 
-Читающие: search_events, get_event, find_similar, get_venue_schedule. Предлагающие: subscribe, save_feedback: они ничего не
+Читающие: search_events, get_event, find_similar, get_venue_schedule, plan_day (планировщик «Выходной день», §6.5). Предлагающие: subscribe, save_feedback: они ничего не
 меняют, а создают предложение действия, которое выполнит только человек кнопкой (agent_actions). Ошибка инструмента
 возвращается модели как {"error": ...}: она должна сообщить о проблеме, а не подменять результат догадкой.
 Текст из описаний событий (внешние данные) проходит safety.neutralize: приказы из него модель не получает."""
@@ -15,6 +15,7 @@ from .feedback import KINDS, check_content
 from .formatting import price_text, when_text
 from .models import Event
 from .normalize import CATEGORIES, CITY_FORMS, STATUSES, canonical_category, canonical_city, norm_text
+from .planner import MAX_EVENTS, MIN_EVENTS, PlanRequest, PlanResult, plan_weekend
 from .safety import neutralize
 from .search import SearchFilters, facets, get_event, search, similar
 from .tracing import TraceBuilder
@@ -119,7 +120,31 @@ FEEDBACK_TOOL = {
         "required": ["text"],
     },
 }
-TOOLS = (SEARCH_TOOL, GET_EVENT_TOOL, SIMILAR_TOOL, VENUE_TOOL, SUBSCRIBE_TOOL, FEEDBACK_TOOL)
+PLAN_TOOL = {
+    "name": "plan_day",
+    "description": (
+        "Планировщик «Выходной день»: 2–4 события одного дня без пересечений, по времени, с оценкой переездов и общей "
+        "стоимостью. Для просьб «сделай план», «распланируй день». Если ограничения несовместимы, возвращает feasible=false, "
+        "причину и что можно изменить."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "day": {"type": "string", "description": "День, ГГГГ-ММ-ДД"},
+            "window_from": {**_HHMM, "description": "Свободен с, ЧЧ:ММ (по умолчанию 10:00)"},
+            "window_to": {**_HHMM, "description": "Свободен до, ЧЧ:ММ (по умолчанию 22:00)"},
+            "budget": {"type": "integer", "description": "Бюджет в рублях на всех"},
+            "adults": {"type": "integer", "description": "Сколько взрослых (по умолчанию 1)"},
+            "children": {"type": "array", "items": {"type": "integer"}, "description": "Возраст каждого ребёнка"},
+            "city": {"type": "string", "description": "Город, например «Уфа»"},
+            "max_travel_min": {"type": "integer", "description": "Максимум минут на один переезд (по умолчанию 40)"},
+            "events": {"type": "integer", "description": "Сколько событий, 2–4 (по умолчанию 3)"},
+            "category": {"type": "string", "enum": list(CATEGORIES), "description": "Только эта категория"},
+        },
+        "required": ["day"],
+    },
+}
+TOOLS = (SEARCH_TOOL, GET_EVENT_TOOL, SIMILAR_TOOL, VENUE_TOOL, PLAN_TOOL, SUBSCRIBE_TOOL, FEEDBACK_TOOL)
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
 
@@ -170,6 +195,51 @@ def _clock(value) -> time | None:
         return None
     hour, _, minute = text.partition(":")
     return time(int(hour), int(minute or 0))  # ValueError вернётся модели как ошибка инструмента
+
+
+def plan_request_from_args(args: dict, now: datetime) -> PlanRequest:
+    """Аргументы plan_day (модель, MCP-клиент) → запрос планировщика. Неверная дата или время — ValueError."""
+    defaults = PlanRequest(day=now.date())
+    raw_children = args.get("children") if isinstance(args.get("children"), list) else []
+    children = [a for a in (int_or_none(v) for v in raw_children[:10]) if a is not None and 0 <= a <= 18]
+    city_raw = str(args.get("city") or "").strip()[:64]
+    category = str(args.get("category") or "")
+    budget = int_or_none(args.get("budget"))
+    adults = int_or_none(args.get("adults"))
+    req = PlanRequest(
+        day=date.fromisoformat(str(args.get("day") or "")),
+        window_from=_clock(args.get("window_from")) or defaults.window_from,
+        window_to=_clock(args.get("window_to")) or defaults.window_to,
+        budget=budget if budget is not None and budget >= 0 else None,
+        adults=max(0, min(adults if adults is not None else 1, 10)),
+        children=children,
+        city=(canonical_city(city_raw) or city_raw) if city_raw else None,
+        max_travel_min=int_or_none(args.get("max_travel_min")) or defaults.max_travel_min,
+        events=max(MIN_EVENTS, min(int_or_none(args.get("events")) or defaults.events, MAX_EVENTS)),
+        category=category if category in CATEGORIES else None,
+    )
+    if req.people == 0:
+        raise ValueError("Нужен хотя бы один участник")
+    if req.window_from >= req.window_to:
+        raise ValueError("Окно времени: «с» должно быть раньше «по»")
+    return req
+
+
+def plan_for_tool(result: PlanResult) -> dict:
+    return {
+        "request": result.request.describe(),
+        "feasible": result.feasible,
+        "message": result.message,
+        "suggestions": result.suggestions,
+        "total_cost": result.total_cost,
+        "total_travel_min": result.total_travel_min,
+        "items": [
+            {"id": i.event.id, "title": i.event.title, "venue": i.event.venue, "city": i.event.city,
+             "start": i.start.strftime("%Y-%m-%d %H:%M"), "end": i.end.strftime("%Y-%m-%d %H:%M"),
+             "end_estimated": i.end_estimated, "travel_min": i.travel_min, "cost": i.cost, "price_known": i.price_known}
+            for i in result.items
+        ],
+    }
 
 
 def filters_from_tool_input(inp: dict) -> SearchFilters:
@@ -263,8 +333,18 @@ def run_tool(ctx: ToolContext, name: str, args: dict) -> dict:
     return result
 
 
+def _safe_value(value):
+    """Аргумент для трассы: числа и флаги как есть, списки списками (обрезанными), остальное строкой до 200 символов.
+    Списки раньше превращались в строку «[382, 489]», и метрику точности инструментов нельзя было посчитать по трассе кодом."""
+    if isinstance(value, (int, float, bool, type(None))):
+        return value
+    if isinstance(value, list):
+        return [v if isinstance(v, (int, float, bool, type(None))) else str(v)[:60] for v in value[:30]]
+    return str(value)[:200]
+
+
 def _safe_args(args: dict) -> dict:
-    return {str(k)[:40]: (v if isinstance(v, (int, float, bool, type(None))) else str(v)[:200]) for k, v in list(args.items())[:20]}
+    return {str(k)[:40]: _safe_value(v) for k, v in list(args.items())[:20]}
 
 
 def _dispatch(ctx: ToolContext, name: str, args: dict) -> tuple[dict, list[Event], int | None]:
@@ -304,6 +384,11 @@ def _dispatch(ctx: ToolContext, name: str, args: dict) -> tuple[dict, list[Event
         events, total = search(session, filters, now)
         ctx.last_filters = filters.describe()
         return {"venue": venue, "period": [start.isoformat(), end.isoformat()], **_listing(ctx, events, total)}, events, total
+
+    if name == "plan_day":
+        result = plan_weekend(session, plan_request_from_args(args, now), now)
+        events = [i.event for i in result.items]
+        return plan_for_tool(result), events, len(events)
 
     if name == "subscribe":
         if ctx.chat_id is None:

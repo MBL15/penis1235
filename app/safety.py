@@ -82,13 +82,39 @@ def ungrounded_numbers(reply: str | None, source_text: str) -> list[str]:
     """Числа и время из ответа (две цифры и больше), которых нет ни в результатах инструментов, ни в самом вопросе.
 
     Грубая проверка «каждый факт взят из данных» (ТЗ §7.1, метрика 1): цены, даты, время и возраст в ответе должны
-    встречаться в том, что вернули инструменты. Она не блокирует ответ, а отмечается в трассе и в отчёте прогона."""
+    встречаться в том, что вернули инструменты. Ответ с такими числами пользователю не показывается (agent._checked)."""
     missing = []
     for token in dict.fromkeys(_NUMBER.findall(reply or "")):
         if len(token) < 2:
             continue
         if not re.search(rf"(?<![\d:]){re.escape(token)}(?![\d:])", source_text):
             missing.append(token)
+    return missing
+
+
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_PHONE = re.compile(r"(?:\+7|(?<![\d+])8)[\s\-()]*\d{3}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}(?!\d)")
+
+
+def mask_pii(text: str | None) -> str:
+    """Телефоны и почта из текста трассы (ТЗ §10: персональные данные минимизированы). Трасса открыта по ссылке 30 дней,
+    а человек мог написать в вопросе свой номер. Цены, даты и время такой шаблон не задевает."""
+    return _PHONE.sub("[телефон скрыт]", _EMAIL.sub("[почта скрыта]", text or ""))
+
+
+_QUOTED = re.compile(r"«([^»]{3,120})»")
+_ECHO = re.compile(r"\([^)]*\)|слов\w*\s+«[^»]*»")  # пересказ условий в скобках и «со словом «…»»: это слова запроса
+
+
+def ungrounded_titles(reply: str | None, source_text: str, allowed_text: str = "") -> list[str]:
+    """Названия в «ёлочках», которых нет ни в результатах инструментов, ни в вопросе, ни в готовых фразах сервиса
+    (allowed_text: системный промпт с примерами вроде «в источнике нет описания»). Признак выдуманного события (ТЗ §7.1)."""
+    known = f" {norm_text(source_text)} {norm_text(allowed_text)} "
+    missing = []
+    for quoted in dict.fromkeys(_QUOTED.findall(_ECHO.sub(" ", reply or ""))):
+        key = norm_text(quoted)
+        if key and f" {key} " not in known:
+            missing.append(quoted)
     return missing
 
 

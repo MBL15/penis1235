@@ -618,7 +618,8 @@
   function messageHtml(m) {
     if (m.role === 'user') return `<div class="${MSG} justify-end"><div class="max-w-[86%] origin-bottom-right animate-bubble-in whitespace-pre-wrap rounded-[20px] rounded-br-[6px] bg-brand px-4 py-3 text-white shadow-[0_8px_20px_rgb(var(--brand)/.25)] [overflow-wrap:anywhere]">${esc(m.content)}</div></div>`;
     // в истории могли остаться ответы старого провайдера: показываем только Gemini, остальные подписываем нейтрально
-    const tag = m.mode === 'llm' ? `Подбор сделал ИИ-агент${{gemini: ' · Gemini', groq: ' · Groq'}[m.provider] || ''}` : m.mode === 'rules' ? 'Режим без ИИ: разбор запроса по правилам' : '';
+    // ТЗ §6.4: интерфейс показывает, что ответ построен по данным сервиса, а не «мнением модели»
+    const tag = m.mode === 'llm' ? `Подбор сделал ИИ-агент${{gemini: ' · Gemini', groq: ' · Groq'}[m.provider] || ''} по карточкам афиши, а не по своим знаниям` : m.mode === 'rules' ? 'Режим без ИИ: разбор запроса по правилам, ответ по карточкам афиши' : '';
     const cards = m.events && m.events.length ? `<div class="grid auto-rows-auto grid-flow-dense grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 tg:grid-cols-1">${m.events.map((e, i) => cardHtml(e, '', i, false)).join('')}</div>` : '';
     const trace = HEX32.test(m.trace_id || '') ? `<a class="${TRACE_LINK}" href="/trace/${m.trace_id}" target="_blank" rel="noopener">Как получен ответ</a>` : '';
     const footer = tag || trace ? `<span class="mt-[6px] block text-[.8rem] text-ink-3">${tag}${tag && trace ? ' · ' : ''}${trace}</span>` : '';

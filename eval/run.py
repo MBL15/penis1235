@@ -342,7 +342,9 @@ def check_stability(session, count: int = 20) -> dict:
         with agent_mode("rules"):
             fire("model_off", count)
         with agent_mode("llm"), mock.patch.object(config, "GEMINI_API_KEY", "eval-key"), \
-                mock.patch.object(agent, "_gemini_ask", side_effect=agent.AgentError("модель недоступна")):
+                mock.patch.object(agent, "_gemini_ask", side_effect=agent.AgentError("модель недоступна")), \
+                mock.patch.object(agent, "_openai_ask", side_effect=agent.AgentError("модель недоступна")):
+            # оба провайдера «упали»: с заданным GROQ_API_KEY проверка иначе ходила бы в настоящий Groq и тратила квоту
             fire("model_failing", 5)
     finally:
         app.dependency_overrides.pop(get_session, None)
