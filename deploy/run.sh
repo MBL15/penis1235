@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Сборка образа и запуск сайта и бота с урезанными правами. Запускать на сервере из каталога проекта: bash deploy/run.sh
+# Сборка образа и запуск сайта, бота и планировщика сбора с урезанными правами. Запускать на сервере из каталога проекта:
+# bash deploy/run.sh
 # Другие контейнеры и сайты сервера не затрагиваются.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -20,9 +21,14 @@ HARDEN=(
   -v "$DATA":/data
 )
 
-sudo docker rm -f afisha-web afisha-bot >/dev/null 2>&1 || true
+sudo docker rm -f afisha-web afisha-bot afisha-scheduler >/dev/null 2>&1 || true
 sudo docker run -d --name afisha-web "${HARDEN[@]}" --env-file .env afisha:latest
 sudo docker run -d --name afisha-bot "${HARDEN[@]}" --env-file .env.bot afisha:latest python -m app.bot
+# Сбор по расписанию data/schedule.json. С сервера открывается не каждый источник (culture.ru запрещает обход, Яндекс и Kassir
+# отвечают не всем адресам), поэтому здесь по умолчанию только кино с afisha.ru и проверка карточек. Другой набор задач:
+# SCHEDULE_ONLY=afisha-cinema,kassir,verify bash deploy/run.sh; пустое значение (SCHEDULE_ONLY=) — все задачи.
+sudo docker run -d --name afisha-scheduler "${HARDEN[@]}" --env-file .env -e SCHEDULE_ONLY="${SCHEDULE_ONLY-afisha-cinema,verify}" \
+  afisha:latest python -m app.scheduler
 
 sleep 4
 sudo docker ps --format '{{.Names}} {{.Status}}' | grep afisha

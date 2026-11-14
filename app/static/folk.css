@@ -1,7 +1,7 @@
 /* Башкирские народные мотивы поверх бенто-сетки (редизайн 14.11.2026).
 
    Узоры взяты из башкирской вышивки и войлочных ковров-кошм: цепочка ромбов «крестом», ступенчатый уголок, восьмиконечная
-   звезда, «бараньи рога» (ҡуçҡар мөгөҙө) и розетка из них; знак сайта — цветок курая с флага республики (символ i-kurai).
+   звезда, «бараньи рога» (ҡуçҡар мөгөҙө) у плашки и розетка из них; знак сайта — цветок курая с флага республики (символ i-kurai).
    Правила практичности:
    * орнамент — только украшение: псевдоэлемент или aria-hidden, не перехватывает нажатия, не лежит под текстом;
    * три краски, как на праздничном полотенце: кремовое полотно, тёмно-синий узор (--ornament), красный (--brand) для акцентов;
@@ -42,13 +42,14 @@
 }
 
 /* ---------- первый экран ---------- */
-/* Подчёркивание «в Башкортостане» — вышитая лента вместо сплошной полосы */
-#hero-title > span::after {
-  background-color: rgb(var(--ornament)) !important; height: .24em !important; bottom: -.06em !important; border-radius: 0 !important;
+/* Вышитая лента под заголовком — отдельной строкой с отступом, а не подчёркиванием, прилипшим к буквам.
+   Прежнее подчёркивание слова (::after у span из разметки) скрыто. */
+#hero-title > span::after { display: none !important; }
+#hero-title::after {
+  content: ""; display: block; width: min(320px, 72%); height: 10px; margin-top: .34em; pointer-events: none;
+  background-color: rgb(var(--ornament) / .55);
   -webkit-mask: var(--folk-stitch) left center / auto 100% repeat-x; mask: var(--folk-stitch) left center / auto 100% repeat-x;
 }
-/* Без анимации (панель «Удобство просмотра») лента сразу на месте: иначе она оставалась бы свёрнутой в ноль */
-:root[data-motion="reduce"] #hero-title > span::after { transform: none !important; animation: none !important; }
 /* Плашка «Республика Башкортостан» в скобках из «рогов» */
 .folk-pill { display: inline-flex !important; align-items: center; gap: 8px; }
 .folk-pill::before, .folk-pill::after {
@@ -88,14 +89,6 @@
   content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 16px; z-index: 1; pointer-events: none; background: var(--tile-bg);
 }
 
-/* ---------- панель фильтров: «рога» над рамкой, как застёжка ---------- */
-#filter-panel { position: relative; }
-#filter-panel::before {
-  content: ""; position: absolute; left: 50%; top: -18px; width: 58px; height: 36px; transform: translateX(-50%); pointer-events: none;
-  background: rgb(var(--ornament) / .7);
-  -webkit-mask: var(--folk-horns) center / contain no-repeat; mask: var(--folk-horns) center / contain no-repeat;
-}
-
 /* ---------- подвал: красная полоса с фестонами и вышивкой, как край праздничного полотенца ---------- */
 .folk-footer { position: relative; margin-top: 64px !important; padding-top: 46px !important; background: rgb(var(--brand)); color: #fff !important; }
 .folk-footer::before {
@@ -110,15 +103,26 @@
 .folk-footer a { color: #fff !important; }
 .folk-footer code { background: rgb(255 255 255 / .16) !important; color: #fff !important; }
 
+/* ---------- шапка на планшете: без переносов ---------- */
+/* Кнопки темы и «Удобства просмотра» заняли место: между 601 и 900 px «Афиша культуры» и «Выходной день» переносились
+   на две строки. Подписи в одну строку, а «API» и «Виджет» на этой ширине убираем — обе ссылки есть в подвале. */
+#site-nav a, #site-nav nav button { white-space: nowrap; }
+@media (max-width: 900px) { #site-nav nav a[href="/docs"], #site-nav nav a[href="/widget-demo"] { display: none; } }
+/* На телефоне в шапке только знак курая: название обрезалось до «Афи…». Подпись ссылки для экранных читалок остаётся (aria-label). */
+@media (max-width: 480px) { #site-nav a[href="/"] > span:last-child { display: none; } }
+/* Плавающие «А+ / А−» на узком экране закрывали кнопку поиска и край фильтров и карточек: прячем их до 1100 px.
+   Размер текста там же меняется в панели «Удобство просмотра» (кнопка с человечком в шапке). */
+@media (max-width: 1100px) { .ui-fontbar { display: none !important; } }
+
 /* ---------- где украшения не нужны ---------- */
 /* Мини-приложение Telegram: узкий экран и своя рамка — оставляем цвета и ленточки, крупные узоры прячем */
-.tg .folk-felt, .tg .folk-hero::before, .tg #filter-panel::before, .tg [id^="stat-"]::after, .tg #category-chips > button::after { display: none; }
+.tg .folk-felt, .tg .folk-hero::before, .tg [id^="stat-"]::after, .tg #category-chips > button::after { display: none; }
 /* Высокий контраст: фон без узора, чтобы ничего не спорило с текстом */
 :root[data-contrast="more"] .folk-felt, :root[data-contrast="more"] .folk-hero::before { display: none; }
 @media (prefers-contrast: more) { :root:not([data-contrast="normal"]) .folk-felt, :root:not([data-contrast="normal"]) .folk-hero::before { display: none; } }
 /* «Принудительные цвета» Windows заливают маски сплошным цветом */
 @media (forced-colors: active) {
-  .folk-felt, .folk-band, .folk-hero::before, .folk-pill::before, .folk-pill::after, #results-section::before, #filter-panel::before,
+  .folk-felt, .folk-band, .folk-hero::before, #hero-title::after, .folk-pill::before, .folk-pill::after, #results-section::before,
   #category-chips > button::after, [id^="stat-"]::after, #results article > div:first-child::after, #results article > div:first-child::before,
   #filters-title::before, #when-label::before, #price-label::before, #age-label::before, #extra-label::before,
   .folk-footer::before, .folk-footer::after { display: none; }

@@ -210,3 +210,29 @@ def test_admin_sees_sync_runs(client, session, admin_key):
     runs = client.get("/api/v1/admin/sync-runs", headers=admin_key).json()
     assert runs[0]["job"] == "kassir" and runs[0]["status"] == "ok" and runs[0]["created"] == 1 and runs[0]["fetched"] == 1
     assert client.get("/api/v1/admin/sync-runs?job=nope", headers=admin_key).json() == []
+
+
+def test_only_jobs_filters_and_rejects_typos():
+    """Сервер: только доступные источники (deploy/run.sh запускает кино и проверку). Опечатка не выключает сбор молча."""
+    jobs = load_schedule()
+    picked = scheduler.only_jobs(jobs, "afisha-cinema, verify")
+    assert [j.name for j in picked] == ["afisha-cinema", "verify"]
+    assert scheduler.only_jobs(jobs, "") == jobs and scheduler.only_jobs(jobs, None) == jobs
+    with pytest.raises(ScheduleError, match="kino"):
+        scheduler.only_jobs(jobs, "afisha-cinema,kino")
+
+
+def test_server_schedule_has_the_cinema_job():
+    cinema = next(j for j in load_schedule() if j.name == "afisha-cinema")
+    from app.sources import afisha_cinema
+
+    assert cinema.source == "afisha-cinema" and cinema.every_hours <= 12
+    assert set(cinema.args["cities"].split(",")) <= set(afisha_cinema.CITY_SLUGS)
+
+
+def test_deploy_runs_the_scheduler_with_cinema_only():
+    from pathlib import Path
+
+    run_sh = (Path(__file__).resolve().parent.parent / "deploy" / "run.sh").read_text(encoding="utf-8")
+    assert "--name afisha-scheduler" in run_sh and "python -m app.scheduler" in run_sh
+    assert 'SCHEDULE_ONLY="${SCHEDULE_ONLY-afisha-cinema,verify}"' in run_sh

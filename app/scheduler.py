@@ -8,12 +8,15 @@
   python -m app.scheduler --once          # запустить то, что пора, и выйти (для cron и Планировщика заданий Windows)
   python -m app.scheduler --list          # расписание и результат последних запусков
   python -m app.scheduler --run kassir    # запустить задачу сейчас, независимо от расписания
+  python -m app.scheduler --only afisha-cinema,verify   # только эти задачи (сервер, с которого открываются не все источники)
 
 Один запуск задачи в один момент: незавершённый запуск младше двух часов блокирует новый. После сбоя повтор через час.
-Сайты источников отвечают не всем серверам (в России, например, culture.ru): запускайте там, откуда они доступны."""
+Сайты источников отвечают не всем серверам (в России, например, culture.ru): запускайте там, откуда они доступны, а на сервере
+оставьте только доступные задачи через --only или переменную SCHEDULE_ONLY (deploy/run.sh запускает так кино и проверку)."""
 import argparse
 import json
 import logging
+import os
 import sys
 import time
 from argparse import Namespace
@@ -33,6 +36,18 @@ from .sources.base import BlockedError, SourceError
 log = logging.getLogger("afisha.scheduler")
 
 SCHEDULE_FILE = Path(__file__).resolve().parent.parent / "data" / "schedule.json"
+
+
+def only_jobs(jobs: list, names: str | None) -> list:
+    """Оставить задачи с этими именами (через запятую). Пусто — все. Неизвестное имя — ошибка: опечатка в настройке сервера
+    иначе молча выключила бы сбор."""
+    wanted = [n.strip() for n in (names or "").split(",") if n.strip()]
+    if not wanted:
+        return jobs
+    unknown = [n for n in wanted if n not in {j.name for j in jobs}]
+    if unknown:
+        raise ScheduleError(f"нет задач {', '.join(unknown)}; есть: {', '.join(j.name for j in jobs)}")
+    return [j for j in jobs if j.name in wanted]
 RETRY_AFTER_FAILURE_HOURS = 1
 STALE_RUNNING_HOURS = 2  # «идёт» дольше этого считаем зависшим
 POLL_SECONDS = 60
@@ -193,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--list", action="store_true", help="показать расписание и последние запуски")
     parser.add_argument("--run", metavar="ЗАДАЧА", help="запустить задачу сейчас")
     parser.add_argument("--pause", type=float, default=1.0, help="пауза между запросами к одному сайту при проверке ссылок, секунд")
+    parser.add_argument("--only", default=os.getenv("SCHEDULE_ONLY", ""), metavar="ЗАДАЧИ",
+                        help="только эти задачи через запятую, например afisha-cinema,verify (или переменная SCHEDULE_ONLY)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     try:
@@ -200,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
     except (AttributeError, ValueError):
         pass
     try:
-        jobs = load_schedule(args.schedule)
+        jobs = only_jobs(load_schedule(args.schedule), args.only)
     except ScheduleError as exc:
         print(f"Расписание: {exc}", file=sys.stderr)
         return 2

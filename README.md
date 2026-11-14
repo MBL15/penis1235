@@ -258,6 +258,7 @@ python -m eval.basic                                  # базовое каче�
 python -m app.scheduler --list         # расписание и последние запуски
 python -m app.scheduler --once         # запустить то, что пора, и выйти (cron, Планировщик заданий Windows)
 python -m app.scheduler --run kassir   # запустить задачу сейчас
+python -m app.scheduler --only afisha-cinema,verify   # только эти задачи (на сервере так работает deploy/run.sh)
 python -m app.scheduler                # работать постоянно (docker compose --profile sync up)
 python -m app.verify run --no-links    # только проверить карточки (--all: все будущие события)
 ```
