@@ -73,8 +73,10 @@ def _layout(title: str, description: str, body: str, *, path: str = "", image: s
   <script src="/static/boot.js"></script>
   <link rel="stylesheet" href="/static/tailwind.css">
   <link rel="stylesheet" href="/static/ui.css">
+  <link rel="stylesheet" href="/static/folk.css">
 </head>
 <body class="min-h-screen bg-art bg-page bg-fixed text-ink antialiased">
+  <div class="folk-felt" aria-hidden="true"></div>
   <header class="mx-auto flex {width} flex-wrap items-center justify-between gap-3 px-4 pt-4">
     <a href="/" class="inline-flex min-h-[44px] items-center gap-2 rounded-field border border-stroke bg-glass-hi px-4 font-[650] text-brand-ink no-underline shadow-surface tx-link hover:bg-surface">← К афише</a>
     <nav class="flex items-center gap-1"><span class="contents" data-a11y-slot></span><a href="/account" class="rounded-[12px] px-[14px] py-2 text-[.95rem] font-semibold text-ink-3 no-underline tx-link hover:bg-surface/70 hover:text-ink">Кабинет</a>

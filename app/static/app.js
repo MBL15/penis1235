@@ -459,7 +459,7 @@
     };
     const page = hex('--page', '#eef2fb');
     try { tg.setHeaderColor(page); tg.setBackgroundColor(page); } catch (_) { /* старые клиенты */ }
-    tg.MainButton.setParams({ color: hex('--brand', '#4f46e5'), text_color: '#ffffff' });
+    tg.MainButton.setParams({ color: hex('--brand', '#b0261e'), text_color: '#ffffff' });
   }
   // ---------- подписка на новые события ----------
   /** В Telegram: кнопка создаёт подписку через API (подпись Mini App доказывает, чей это чат). В браузере: подсказка про бота. */

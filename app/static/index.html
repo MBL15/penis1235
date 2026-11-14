@@ -12,11 +12,14 @@
   <!-- Стили собирает Tailwind CSS (npm run build:css) из этой разметки и из app.js -->
   <link rel="stylesheet" href="/static/tailwind.css">
   <link rel="stylesheet" href="/static/ui.css">
+  <!-- Башкирские орнаменты поверх бенто-сетки -->
+  <link rel="stylesheet" href="/static/folk.css">
 </head>
 <body class="scroll-progress min-h-screen bg-page text-ink antialiased">
   <!-- Иконки: линейные SVG одного стиля (24×24, штрих 1.8) -->
   <svg class="absolute h-0 w-0 overflow-hidden" width="0" height="0" aria-hidden="true" focusable="false">
     <defs>
+      <symbol id="i-kurai" viewBox="0 0 24 24"><path transform="rotate(0.0 12 12)" d="M12 9.4c-1.5-2-1.3-4.9 0-6.2 1.3 1.3 1.5 4.2 0 6.2z"/><path transform="rotate(51.43 12 12)" d="M12 9.4c-1.5-2-1.3-4.9 0-6.2 1.3 1.3 1.5 4.2 0 6.2z"/><path transform="rotate(102.86 12 12)" d="M12 9.4c-1.5-2-1.3-4.9 0-6.2 1.3 1.3 1.5 4.2 0 6.2z"/><path transform="rotate(154.29 12 12)" d="M12 9.4c-1.5-2-1.3-4.9 0-6.2 1.3 1.3 1.5 4.2 0 6.2z"/><path transform="rotate(205.71 12 12)" d="M12 9.4c-1.5-2-1.3-4.9 0-6.2 1.3 1.3 1.5 4.2 0 6.2z"/><path transform="rotate(257.14 12 12)" d="M12 9.4c-1.5-2-1.3-4.9 0-6.2 1.3 1.3 1.5 4.2 0 6.2z"/><path transform="rotate(308.57 12 12)" d="M12 9.4c-1.5-2-1.3-4.9 0-6.2 1.3 1.3 1.5 4.2 0 6.2z"/><circle cx="12" cy="12" r="1.7"/></symbol>
       <symbol id="i-theatre" viewBox="0 0 24 24"><path d="M4 4h9v7a4.5 4.5 0 0 1-9 0z"/><path d="M6.5 8h.01M10.5 8h.01M6.5 12.2c1 .9 2.9.9 3.9 0"/><path d="M13 9h7v6.5a4.5 4.5 0 0 1-7.5 3.3"/><path d="M15.5 13h.01M18.5 13h.01"/></symbol>
       <symbol id="i-concert" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
       <symbol id="i-exhibition" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-9 9"/></symbol>
@@ -51,11 +54,12 @@
   </svg>
 
   <div class="fixed inset-0 z-[-1] overflow-hidden bg-art bg-page before:absolute before:-left-[18vmax] before:top-[18vmax] before:h-[64vmax] before:w-[64vmax] before:animate-drift-a before:rounded-full before:bg-[radial-gradient(closest-side,rgb(var(--blob-a)),transparent_72%)] before:will-change-transform before:content-[''] after:absolute after:-top-[22vmax] after:right-[12vmax] after:h-[64vmax] after:w-[64vmax] after:animate-drift-b after:rounded-full after:bg-[radial-gradient(closest-side,rgb(var(--blob-b)),transparent_72%)] after:will-change-transform after:content-['']" aria-hidden="true"></div>
+  <div class="folk-felt" aria-hidden="true"></div>
 
   <!-- Верхняя панель мини-приложения Telegram (в обычном браузере скрыта) -->
   <div class="hidden tg:sticky tg:top-0 tg:z-30 tg:flex tg:flex-wrap tg:items-center tg:justify-between tg:gap-3 tg:border-b tg:border-stroke tg:bg-glass-hi tg:px-[max(14px,env(safe-area-inset-left))] tg:py-[10px] tg:backdrop-blur-[18px] tg:backdrop-saturate-[1.6]">
     <div class="flex items-center gap-[10px]">
-      <span class="grid h-[34px] w-[34px] flex-none place-items-center rounded-[12px] bg-brand p-[7px] text-white shadow-[0_8px_18px_rgb(var(--brand)/.35)] transition-transform duration-[.4s] ease-spring" aria-hidden="true"><svg class="icon h-full w-full"><use href="#i-calendar"/></svg></span>
+      <span class="grid h-[34px] w-[34px] flex-none place-items-center rounded-[12px] bg-brand p-[7px] text-white shadow-[0_8px_18px_rgb(var(--brand)/.35)] transition-transform duration-[.4s] ease-spring" aria-hidden="true"><svg class="icon h-full w-full"><use href="#i-kurai"/></svg></span>
       <div><strong class="block text-[1.1rem] font-extrabold leading-[1.1] tracking-[-.02em]">Афиша</strong><small class="text-[.8rem] text-ink-3">Башкортостан</small></div>
     </div>
     <div class="flex items-center gap-2">
@@ -70,7 +74,7 @@
   <header id="site-nav" class="group/nav pointer-events-none sticky top-0 z-20 animate-nav-in px-4 pt-3 tg:hidden w600:px-[14px] w600:pt-[10px]">
     <div class="pointer-events-auto mx-auto flex max-w-[1160px] items-center justify-between gap-4 rounded-card border border-stroke bg-glass-hi py-[10px] pl-4 pr-3 shadow-surface backdrop-blur-[18px] backdrop-saturate-[1.6] [transition:box-shadow_.4s_cubic-bezier(.22,1,.36,1),background_.4s] group-[.scrolled]/nav:bg-surface/90 group-[.scrolled]/nav:shadow-surface-2 w600:flex-wrap w600:gap-y-2 w600:rounded-[20px] w600:py-2 w600:pl-3 w600:pr-[10px]">
       <a class="group/brand flex items-center gap-3 text-[1.1rem] font-extrabold tracking-[-.02em] text-ink no-underline w600:min-w-[38px] w600:flex-[1_1_0%] w600:text-[1.02rem]" href="/" aria-label="Афиша культуры Башкортостана, на главную">
-        <span class="grid h-[38px] w-[38px] flex-none place-items-center rounded-[13px] bg-brand p-2 text-white shadow-[0_8px_18px_rgb(var(--brand)/.35)] transition-transform duration-[.4s] ease-spring group-hover/brand:-rotate-[8deg] group-hover/brand:scale-[1.08]" aria-hidden="true"><svg class="icon h-full w-full"><use href="#i-calendar"/></svg></span>
+        <span class="grid h-[38px] w-[38px] flex-none place-items-center rounded-[13px] bg-brand p-2 text-white shadow-[0_8px_18px_rgb(var(--brand)/.35)] transition-transform duration-[.4s] ease-spring group-hover/brand:-rotate-[8deg] group-hover/brand:scale-[1.08]" aria-hidden="true"><svg class="icon h-full w-full"><use href="#i-kurai"/></svg></span>
         <span class="w600:min-w-0 w600:overflow-hidden w600:text-ellipsis w600:whitespace-nowrap">Афиша культуры</span>
       </a>
       <nav class="flex items-center gap-[6px] w600:ml-auto w600:flex-wrap w600:justify-end" aria-label="Разделы">
@@ -89,9 +93,9 @@
       В афише есть <strong>демо-события</strong> с пометкой «демо»: они выдуманы для презентации. Остальные загружены из реальных источников.
     </div>
 
-    <section class="grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] items-center gap-10 pb-3 pt-9 w1000:grid-cols-[minmax(0,1fr)] w1000:gap-6 w600:pt-6 tg:block tg:pb-0 tg:pt-[14px] [&>*]:min-w-0" aria-labelledby="hero-title">
+    <section class="folk-hero grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] items-center gap-10 pb-3 pt-9 w1000:grid-cols-[minmax(0,1fr)] w1000:gap-6 w600:pt-6 tg:block tg:pb-0 tg:pt-[14px] [&>*]:min-w-0" aria-labelledby="hero-title">
       <div class="[&>*]:min-w-0">
-        <p class="reveal mb-4 inline-block rounded-full border border-stroke bg-glass-hi px-[14px] py-1 text-[.8rem] font-bold tracking-[.02em] text-accent shadow-[0_4px_14px_rgb(var(--shade)/.08)] tg:hidden" style="--i:0">Республика Башкортостан</p>
+        <p class="folk-pill reveal mb-4 inline-block rounded-full border border-stroke bg-glass-hi px-[14px] py-1 text-[.8rem] font-bold tracking-[.02em] text-accent shadow-[0_4px_14px_rgb(var(--shade)/.08)] tg:hidden" style="--i:0">Республика Башкортостан</p>
         <h1 id="hero-title" class="reveal text-[length:clamp(min(2.3rem,9.6vw),5.4vw,3.9rem)] font-extrabold leading-[1.04] tracking-[-.035em] [text-wrap:balance] tg:hidden" style="--i:1">Что посмотреть <span class="relative z-0 whitespace-nowrap text-accent after:absolute after:-left-[.04em] after:-right-[.04em] after:bottom-[.06em] after:z-[-1] after:h-[.3em] after:origin-left after:scale-x-0 after:animate-draw after:rounded-[6px] after:bg-[rgb(var(--brand)/.2)] after:content-[''] motion-reduce:after:scale-x-100">в Башкортостане</span></h1>
         <p class="reveal mb-[26px] mt-[18px] max-w-[50ch] text-[1.12rem] text-ink-3 tg:hidden" style="--i:2">События из открытых источников (culture.ru, Яндекс Афиша, Kassir.ru), без дублей и со статусами отмен и переносов. Сейчас в афише <b id="total-events" class="text-ink">…</b>.</p>
 
@@ -247,7 +251,7 @@
     </section>
   </main>
 
-  <footer class="mt-6 pb-[30px] pt-[22px] text-center text-[.9rem] text-ink-3 tg:hidden">
+  <footer class="folk-footer mt-6 pb-[30px] pt-[22px] text-center text-[.9rem] text-ink-3 tg:hidden">
     <div class="mx-auto max-w-[1192px] px-4 w600:px-[14px]">Открытое API: <a class="font-semibold text-accent underline underline-offset-2" href="/docs">документация</a> · <code class="rounded-[7px] bg-brand-tint px-[7px] py-px font-[monospace] text-[.9em] text-brand-ink">GET /api/v1/events</code> · виджет для сайта: <a class="font-semibold text-accent underline underline-offset-2" href="/widget-demo">пример</a> · Telegram-бот использует те же данные<br><button type="button" class="mt-2 inline-flex min-h-[44px] items-center gap-2 font-semibold text-accent underline underline-offset-2" data-a11y-open>Удобство просмотра: тёмная тема, крупный текст, контраст</button></div>
   </footer>
 

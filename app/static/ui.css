@@ -64,7 +64,7 @@ body.ui-has-nav { padding-bottom: calc(var(--ui-nav-h) + 28px + env(safe-area-in
 }
 .ui-toast.ui-bad { background: #9b1c1c; }
 .ui-toast.ui-out { opacity: 0; transform: translateY(10px) scale(.97); }
-.ui-toast a, .ui-toast button { margin-left: auto; flex: none; color: #c7d2fe; font-weight: 750; background: none; border: 0; text-decoration: underline; cursor: pointer; padding: 6px 4px; min-height: 36px; }
+.ui-toast a, .ui-toast button { margin-left: auto; flex: none; color: #ffd2b8; font-weight: 750; background: none; border: 0; text-decoration: underline; cursor: pointer; padding: 6px 4px; min-height: 36px; }
 @keyframes ui-toast-in { from { opacity: 0; transform: translateY(18px) scale(.94); } }
 
 /* ---------- отклик на нажатие и состояния загрузки ---------- */
